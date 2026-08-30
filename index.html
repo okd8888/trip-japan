@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f5c53">
+<meta name="description" content="旅遊行程規劃手冊：行程時間軸、花費記錄、匯率換算，離線可用。">
+<title>旅遊行程手冊</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>">
+<style>
+:root{
+  --bg:#f4f1e9; --surface:#fffefb; --surface-2:#f0ece1; --ink:#1d2a2e; --muted:#6b7c81;
+  --accent:#0f5c53; --accent-soft:#dceee9; --hot:#d8592f; --hot-soft:#fdece4;
+  --line:#e2ddd0; --shadow:0 10px 30px rgba(29,42,46,.08); --radius:18px;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#111819; --surface:#192224; --surface-2:#202b2d; --ink:#e8eeec; --muted:#93a5a8;
+    --accent:#4fbfae; --accent-soft:#12312d; --hot:#f0855c; --hot-soft:#33201a;
+    --line:#2a3639; --shadow:0 10px 30px rgba(0,0,0,.35);
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--ink); line-height:1.6;
+  font-family:"Noto Sans TC","PingFang TC","Heiti TC","Microsoft JhengHei",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  -webkit-text-size-adjust:100%;
+}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:0;background:none}
+a{color:var(--accent)}
+.app{max-width:1120px;margin:0 auto;padding:18px 16px calc(96px + env(safe-area-inset-bottom))}
+
+/* ---------- header / hero ---------- */
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+.brand{font-size:15px;font-weight:700;letter-spacing:.06em}
+.pill{background:var(--accent-soft);color:var(--accent);font-size:12px;font-weight:700;padding:5px 11px;border-radius:99px;white-space:nowrap}
+.hero{
+  position:relative;overflow:hidden;border-radius:24px;background:linear-gradient(135deg,#0f5c53,#0a3f46);
+  color:#fff;padding:26px 22px;box-shadow:var(--shadow)
+}
+.hero::after{content:"";position:absolute;right:-90px;top:-110px;width:300px;height:300px;border-radius:50%;
+  border:1px solid rgba(255,255,255,.22);box-shadow:0 0 0 28px rgba(255,255,255,.05),0 0 0 56px rgba(255,255,255,.035)}
+.hero .eyebrow{font-size:11px;letter-spacing:.2em;font-weight:700;color:#9fd6cd}
+.hero h1{margin:10px 0 8px;font-size:clamp(28px,6vw,46px);line-height:1.15;max-width:16em}
+.hero p{margin:0;color:#cfe4e0;max-width:34em;font-size:14px}
+.hero-meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px;position:relative}
+.hero-meta span{border:1px solid rgba(255,255,255,.24);border-radius:9px;padding:5px 10px;font-size:12px;color:#dcefec}
+
+/* ---------- layout ---------- */
+.layout{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(280px,.6fr);gap:18px;margin-top:18px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow);margin-bottom:16px}
+.panel:last-child{margin-bottom:0}
+.section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:14px}
+.section-head p{margin:0;font-size:12px;color:var(--muted);letter-spacing:.04em}
+.section-head h2{margin:2px 0 0;font-size:22px}
+
+/* ---------- day tabs ---------- */
+.day-tabs{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin-bottom:14px;scrollbar-width:thin}
+.day-tabs button{flex:0 0 auto;background:var(--surface-2);border-radius:12px;padding:9px 13px;font-size:13px;font-weight:700;line-height:1.25;text-align:left}
+.day-tabs button small{display:block;font-weight:500;font-size:11px;color:var(--muted)}
+.day-tabs button.active{background:var(--accent);color:#fff}
+.day-tabs button.active small{color:rgba(255,255,255,.8)}
+.day-tabs button.today{outline:2px solid var(--hot);outline-offset:2px}
+
+/* ---------- timeline ---------- */
+.timeline{display:grid}
+.stop{display:grid;grid-template-columns:64px minmax(0,1fr);gap:12px;padding:14px 0;border-top:1px solid var(--line)}
+.stop:first-child{border-top:0;padding-top:2px}
+.stop .time{font-size:12px;font-weight:800;color:var(--accent);letter-spacing:.03em;padding-top:3px;word-break:break-all}
+.stop h3{margin:0 0 4px;font-size:16px}
+.stop .desc{margin:0;font-size:13px;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center}
+.tag{background:var(--hot-soft);color:var(--hot);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700}
+.tag.cost{background:var(--accent-soft);color:var(--accent)}
+.nav-btn{display:inline-flex;align-items:center;gap:4px;background:var(--accent);color:#fff;border-radius:8px;padding:5px 10px;font-size:12px;font-weight:600;text-decoration:none}
+.nav-btn.ghost{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+.stay{margin-top:16px;background:var(--accent-soft);border-radius:14px;padding:14px;font-size:13px}
+.stay strong{display:block;color:var(--accent);font-size:12px;letter-spacing:.06em;margin-bottom:2px}
+
+/* ---------- cards ---------- */
+.card{background:var(--surface-2);border-radius:14px;padding:14px;margin-bottom:10px}
+.card:last-child{margin-bottom:0}
+.card h3{margin:0 0 4px;font-size:13px;color:var(--muted);font-weight:700;letter-spacing:.04em}
+.card p{margin:0;font-size:14px}
+.card .big{font-size:26px;font-weight:800;color:var(--accent);line-height:1.2}
+.card.accent{border-left:4px solid var(--hot)}
+.checklist{display:grid;gap:8px}
+.checklist label{display:flex;gap:9px;align-items:flex-start;font-size:14px;cursor:pointer}
+.checklist input{margin-top:5px;accent-color:var(--accent);width:16px;height:16px;flex:0 0 auto}
+.checklist label.done span{text-decoration:line-through;color:var(--muted)}
+
+/* ---------- forms ---------- */
+.form{display:grid;gap:9px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+input,select,textarea{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px}
+textarea{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.5;min-height:320px;resize:vertical}
+.btn{background:var(--accent);color:#fff;border-radius:10px;padding:11px;font-weight:700;text-align:center}
+.btn.sub{background:var(--surface-2);color:var(--ink)}
+.btn.danger{background:transparent;color:var(--hot);border:1px solid var(--hot)}
+.btn-row{display:flex;flex-wrap:wrap;gap:8px}
+.btn-row .btn{flex:1 1 auto;padding:9px 14px;font-size:13px}
+
+/* ---------- expenses ---------- */
+.total{display:flex;justify-content:space-between;align-items:baseline;border-top:1px solid var(--line);margin-top:14px;padding-top:13px}
+.total b{font-size:24px}
+.total small{display:block;font-size:12px;color:var(--muted);font-weight:500;text-align:right}
+.exp-list{display:grid;gap:7px;margin-top:12px;max-height:340px;overflow:auto}
+.exp{display:flex;justify-content:space-between;gap:10px;align-items:center;background:var(--surface-2);border-radius:10px;padding:9px 11px;font-size:13px}
+.exp .meta{min-width:0}
+.exp .meta em{display:block;font-style:normal;font-size:11px;color:var(--muted)}
+.exp .amt{text-align:right;white-space:nowrap;font-weight:700}
+.exp .amt small{display:block;font-weight:500;font-size:11px;color:var(--muted)}
+.exp button{color:var(--hot);font-size:12px;padding:2px 4px}
+.bars{display:grid;gap:8px;margin-top:4px}
+.bar-row{font-size:12px}
+.bar-row .bar-label{display:flex;justify-content:space-between;margin-bottom:3px}
+.bar-track{height:7px;border-radius:99px;background:var(--surface-2);overflow:hidden}
+.bar-fill{height:100%;background:var(--accent);border-radius:99px}
+.empty{font-size:13px;color:var(--muted);margin:10px 0 0}
+
+/* ---------- fx ---------- */
+.fx-big input{font-size:26px;font-weight:800;padding:12px;text-align:right}
+.fx-label{font-size:12px;color:var(--muted);margin-bottom:4px;display:block}
+.fx-out{background:var(--accent);color:#fff;border-radius:14px;padding:14px;margin-top:12px}
+.fx-out span{display:block;font-size:12px;color:#bfe3dd}
+.fx-out strong{font-size:24px}
+.fx-table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}
+.fx-table td{padding:7px 0;border-top:1px solid var(--line)}
+.fx-table td:last-child{text-align:right;font-weight:700}
+.note{font-size:12px;color:var(--muted)}
+
+/* ---------- bottom nav ---------- */
+.tabbar{
+  position:fixed;left:50%;transform:translateX(-50%);bottom:calc(12px + env(safe-area-inset-bottom));z-index:20;
+  display:flex;gap:2px;padding:6px;border-radius:16px;width:min(520px,calc(100% - 24px));justify-content:space-around;
+  background:rgba(15,92,83,.96);backdrop-filter:blur(8px);box-shadow:0 10px 30px rgba(0,0,0,.25)
+}
+.tabbar button{color:#bfe3dd;font-size:12px;font-weight:600;padding:7px 10px;border-radius:11px;flex:1}
+.tabbar button.active{background:#fff;color:#0f5c53}
+.view{display:none}
+.view.active{display:block;animation:rise .35s ease-out both}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.view.active{animation:none}}
+.chart img{width:100%;height:auto;border-radius:12px;border:1px solid var(--line);display:block}
+
+@media (max-width:860px){
+  .layout{grid-template-columns:1fr}
+  .hero{padding:22px 18px;border-radius:20px}
+  .app{padding:14px 12px calc(96px + env(safe-area-inset-bottom))}
+  .stop{grid-template-columns:56px minmax(0,1fr)}
+  .row{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<main class="app">
+  <header class="topbar">
+    <div class="brand" id="brand">旅遊行程手冊</div>
+    <span class="pill" id="dateRange">—</span>
+  </header>
+
+  <section class="hero">
+    <div class="eyebrow" id="heroEyebrow">TRIP HANDBOOK</div>
+    <h1 id="heroTitle">旅遊行程手冊</h1>
+    <p id="heroSubtitle"></p>
+    <div class="hero-meta" id="heroMeta"></div>
+  </section>
+
+  <!-- 今天 -->
+  <section id="view-today" class="view active">
+    <div class="layout">
+      <div>
+        <div class="panel" id="chartPanel" hidden>
+          <div class="section-head"><div><p>總覽</p><h2>行程圖表</h2></div></div>
+          <div class="chart"><a id="chartLink" target="_blank" rel="noreferrer"><img id="chartImg" alt="行程圖表"></a></div>
+        </div>
+        <div class="panel">
+          <div class="section-head">
+            <div><p id="todayEyebrow">今天</p><h2 id="todayTitle">—</h2></div>
+            <span class="pill" id="todayBadge">—</span>
+          </div>
+          <div id="todayStay"></div>
+          <div class="timeline" id="todayTimeline"></div>
+        </div>
+      </div>
+      <aside>
+        <div class="panel">
+          <div class="section-head"><div><p>狀態</p><h2 id="countdownTitle">旅程進度</h2></div></div>
+          <div class="card"><h3 id="countdownLabel">倒數</h3><p class="big" id="countdownValue">—</p></div>
+          <div class="card"><h3>下一個亮點</h3><p id="nextHighlight">—</p></div>
+          <div class="card accent"><h3>目前花費</h3><p class="big" id="todaySpend">—</p><p class="note" id="todaySpendSub"></p></div>
+        </div>
+        <div class="panel" id="checklistPanel" hidden>
+          <div class="section-head"><div><p>出發前</p><h2>打包清單</h2></div><span class="pill" id="checkProgress">0/0</span></div>
+          <div class="checklist" id="checklist"></div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- 行程 -->
+  <section id="view-plan" class="view">
+    <div class="panel">
+      <div class="section-head"><div><p>每一天的路線</p><h2 id="planTitle">—</h2></div><span class="pill" id="planDate">—</span></div>
+      <div class="day-tabs" id="dayTabs"></div>
+      <div class="timeline" id="planTimeline"></div>
+      <div class="stay" id="planStay" hidden></div>
+      <p class="note" id="planNotes" style="margin-top:14px"></p>
+    </div>
+  </section>
+
+  <!-- 花費 -->
+  <section id="view-money" class="view">
+    <div class="layout">
+      <div class="panel">
+        <div class="section-head"><div><p>旅途中的每一筆</p><h2>記下花費</h2></div></div>
+        <form class="form" id="expForm">
+          <div class="row">
+            <input id="expAmount" type="number" min="0" step="1" inputmode="decimal" placeholder="金額" required>
+            <select id="expCategory"></select>
+          </div>
+          <div class="row">
+            <select id="expDay"></select>
+            <input id="expNote" placeholder="備註，例如：便利商店早餐">
+          </div>
+          <button class="btn" type="submit">加入這筆花費</button>
+        </form>
+        <div class="total"><span>目前總額</span><b id="expTotal">—</b></div>
+        <div class="exp-list" id="expList"></div>
+        <div class="btn-row" style="margin-top:12px">
+          <button class="btn sub" id="expExport">匯出 CSV</button>
+          <button class="btn danger" id="expClear">清空紀錄</button>
+        </div>
+      </div>
+      <aside>
+        <div class="panel">
+          <div class="section-head"><div><p>分類統計</p><h2>錢花去哪了</h2></div></div>
+          <div class="bars" id="expBars"></div>
+          <p class="empty" id="expBarsEmpty">還沒有紀錄。</p>
+        </div>
+        <div class="panel">
+          <div class="section-head"><div><p>每日花費</p><h2>逐日總計</h2></div></div>
+          <div class="bars" id="expDayBars"></div>
+        </div>
+        <div class="panel">
+          <p class="note">花費只存在這台裝置的瀏覽器（localStorage），不會上傳任何伺服器。換手機或清除瀏覽資料就會消失，建議旅程結束前先「匯出 CSV」。</p>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- 匯率 -->
+  <section id="view-fx" class="view">
+    <div class="layout">
+      <div class="panel">
+        <div class="section-head"><div><p>隨手換算</p><h2 id="fxHeading">幣別換算</h2></div></div>
+        <div class="fx-big">
+          <label class="fx-label" for="fxForeign" id="fxForeignLabel">當地幣別</label>
+          <input id="fxForeign" type="number" inputmode="decimal" value="1000">
+          <label class="fx-label" for="fxHome" id="fxHomeLabel">本國幣別</label>
+          <input id="fxHome" type="number" inputmode="decimal" value="210">
+        </div>
+        <div class="fx-out"><span>換算結果</span><strong id="fxResult">—</strong></div>
+        <div class="row" style="margin-top:14px">
+          <div><label class="fx-label" for="fxRate">匯率（1 單位當地幣 = ? 本國幣）</label><input id="fxRate" type="number" step="0.0001" inputmode="decimal" value="0.21"></div>
+          <div style="display:flex;align-items:flex-end"><button class="btn sub" id="fxRefresh" style="width:100%">重新抓取匯率</button></div>
+        </div>
+        <p class="note" id="fxSource" style="margin-top:10px">—</p>
+      </div>
+      <aside>
+        <div class="panel">
+          <div class="section-head"><div><p>心算表</p><h2>常用金額</h2></div></div>
+          <table class="fx-table"><tbody id="fxTable"></tbody></table>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- 設定 / 編輯 -->
+  <section id="view-edit" class="view">
+    <div class="panel">
+      <div class="section-head"><div><p>把這個工具變成你自己的行程</p><h2>編輯行程資料</h2></div><span class="pill" id="editState">內建資料</span></div>
+      <p class="note">下面是這趟行程的 JSON。改完按「套用預覽」可立即看到效果（存在本機瀏覽器）；確定後按「下載 trip.js」，把檔案覆蓋到專案的 <code>data/trip.js</code> 再推上 GitHub，所有人打開網站就都會看到新版本。</p>
+      <textarea id="tripJson" spellcheck="false"></textarea>
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn" id="tripApply">套用預覽</button>
+        <button class="btn sub" id="tripDownload">下載 trip.js</button>
+        <button class="btn sub" id="tripFormat">格式化</button>
+        <button class="btn danger" id="tripReset">還原成檔案版本</button>
+      </div>
+      <p class="note" id="tripMsg" style="margin-top:10px"></p>
+    </div>
+  </section>
+
+  <nav class="tabbar">
+    <button class="active" data-view="today">今天</button>
+    <button data-view="plan">行程</button>
+    <button data-view="money">花費</button>
+    <button data-view="fx">匯率</button>
+    <button data-view="edit">編輯</button>
+  </nav>
+</main>
+
+<script src="data/trip.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
