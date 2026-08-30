@@ -18,6 +18,8 @@
   const dateOf = i => { const s = T.parseDate(draft.startDate); return s ? T.addDays(s, i) : null; };
   const endDate = () => { const s = T.parseDate(draft.startDate); return s && days().length ? T.addDays(s, days().length - 1) : null; };
   const findDest = id => P.destinations.find(d => d.id === id);
+  /* 「福岡・九州」→「福岡」，用在標題與導航關鍵字 */
+  const shortName = n => String(n || '').split('・')[0].trim();
   const findCur = code => P.currencies.find(c => c.code === code);
 
   const commit = () => T.setTrip(clone(draft));
@@ -92,10 +94,70 @@
 
     if (edDay >= days().length) edDay = days().length - 1;
     commit(); renderAll();
-    msg('#setMsg', `已套用：${draft.title}，共 ${n} 天。`);
+
+    const empty = days().every(d => !(d.items || []).length);
+    if (destChanged && dest && (dest.spots || []).length && empty) {
+      rebuildFromDest(true);
+      msg('#setMsg', `已套用：${draft.title}，共 ${n} 天，並帶入「${dest.name}」的建議行程。`);
+    } else if (destChanged && dest) {
+      msg('#setMsg', `已套用：${draft.title}，共 ${n} 天。` +
+        `目的地已改為「${dest.name}」，但每日行程仍是舊的 —— ` +
+        `要一併換掉請按「依目的地重新產生行程」。`);
+    } else {
+      msg('#setMsg', `已套用：${draft.title}，共 ${n} 天。`);
+    }
   }
 
   const blankDay = () => ({ title: '', stay: { name: '', map: '' }, notes: '', items: [] });
+
+  /* 依目的地的建議景點，把整趟行程重排一次（保留航班、住宿、打包清單） */
+  function rebuildFromDest(silent = false) {
+    const dest = findDest(draft.destId);
+    const spots = dest ? (dest.spots || []) : [];
+    const n = days().length;
+    if (!n) { if (!silent) msg('#setMsg', '請先設定出發與回程日期。', false); return false; }
+    if (!spots.length) {
+      if (!silent) msg('#setMsg',
+        `「${draft.destName || '這個目的地'}」還沒有建議景點清單，無法自動產生。` +
+        '請在下方「每日行程」手動新增，或在 data/presets.js 補上這個目的地的 spots。', false);
+      return false;
+    }
+    const hasContent = days().some(d => (d.items || []).length);
+    if (!silent && hasContent && !confirm(
+      `會用「${dest.name}」的 ${spots.length} 個建議景點重新排出 ${n} 天行程，` +
+      `目前每一天的行程點都會被覆蓋。\n（航班與打包清單會保留）確定嗎？`)) return false;
+
+    /* 住宿是另一回事：換目的地時舊飯店名沒意義，但重排同一個目的地時通常要留著 */
+    const hasStay = days().some(d => d.stay && d.stay.name);
+    const clearStay = !silent && hasStay &&
+      confirm('要一併清空住宿飯店嗎？\n按「確定」清空，按「取消」保留現有飯店名稱。');
+
+    const TIMES = ['09:00', '10:30', '12:00', '14:00', '16:00', '18:00'];
+    const per = Math.max(1, Math.min(5, Math.ceil(spots.length / n)));
+    const name = shortName(draft.destName || dest.name);
+    let k = 0;
+
+    for (let i = 0; i < n; i++) {
+      const picked = spots.slice(k, k + per); k += per;
+      const items = picked.map((sp, j) => ({
+        time: TIMES[Math.min(j, TIMES.length - 1)],
+        name: sp.name, desc: sp.desc || '',
+        ...(sp.tag ? { tag: sp.tag } : {}),
+        ...(sp.cost ? { cost: sp.cost } : {})
+      }));
+      if (i === 0) items.unshift({ time: '抵達', name: `抵達${name}`, desc: '入境、領行李，前往市區飯店。', map: name });
+      if (i === n - 1) items.push({ time: '返程', name: '前往機場・返程', desc: '抓起飛前 2.5 小時到機場。', map: `${name} 機場` });
+      days()[i].items = items;
+      if (clearStay) days()[i].stay = { name: '', map: '' };
+      days()[i].title = i === 0 ? `抵達${name}`
+        : (i === n - 1 ? `最後採買・返程`
+        : (picked.length ? picked.slice(0, 2).map(sp => sp.name).join('・') : `${name} 自由行`));
+    }
+    edDay = 0;
+    commit(); renderAll();
+    if (!silent) msg('#setMsg', `已依「${dest.name}」重新產生 ${n} 天行程，可再自行增刪調整。`);
+    return true;
+  }
 
   function resetBlank() {
     if (!confirm('會清空所有天數的行程點與住宿（保留目的地與日期設定）。確定嗎？')) return;
@@ -213,7 +275,7 @@
       if (d) {
         $('#setDestName').value = d.name === '其他（自行輸入）' ? '' : d.name;
         $('#setCur').value = d.currency.code;
-        if (!$('#setTitle').value.trim() && d.id !== 'custom') $('#setTitle').value = `${d.name} 之旅`;
+        if (!$('#setTitle').value.trim() && d.id !== 'custom') $('#setTitle').value = `${shortName(d.name)} 之旅`;
       }
       return;
     }
@@ -281,6 +343,7 @@
 
     switch (b.id) {
       case 'setApply': applyBasic(); break;
+      case 'setRebuild': rebuildFromDest(); break;
       case 'setReset': resetBlank(); break;
 
       case 'edAddItem':
