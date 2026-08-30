@@ -34,12 +34,11 @@
   const startDate = parseDate(TRIP.startDate);
   const days = TRIP.days || [];
   const dateOf = i => startDate ? addDays(startDate, i) : null;
-  /* 今天是第幾天：-1 = 還沒出發，days.length = 已結束 */
-  const todayIndex = (() => {
-    if (!startDate) return 0;
-    const n = dayCount(startDate, startOfToday());
-    return n < 0 ? -1 : (n >= days.length ? days.length : n);
-  })();
+  /* dayOffset：今天與出發日相差幾天（負數＝還沒出發）
+     todayIndex：-1 = 還沒出發，days.length = 已結束 */
+  const dayOffset = startDate ? dayCount(startDate, startOfToday()) : 0;
+  const todayIndex = !startDate ? 0
+    : (dayOffset < 0 ? -1 : (dayOffset >= days.length ? days.length : dayOffset));
 
   const download = (name, text, type = 'text/plain;charset=utf-8') => {
     const url = URL.createObjectURL(new Blob([text], { type }));
@@ -109,7 +108,7 @@
 
     if (before) {
       $('#countdownLabel').textContent = '距離出發';
-      $('#countdownValue').textContent = `${-todayIndex} 天`;
+      $('#countdownValue').textContent = -dayOffset === 1 ? '明天出發' : `${-dayOffset} 天`;
     } else if (after) {
       $('#countdownLabel').textContent = '旅程狀態';
       $('#countdownValue').textContent = '已結束';
