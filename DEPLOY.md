@@ -50,7 +50,7 @@ git config --global user.email "你註冊 GitHub 用的 email"
 在專案資料夾裡執行（把 `<username>` 和 `<repo名稱>` 換成你的）：
 
 ```bash
-cd /Users/lung/claudeAI/code/旅遊行程規劃
+cd /Users/lung/claudeAI/code/trip-japan
 git remote add origin https://github.com/<username>/<repo名稱>.git
 git branch -M main
 git push -u origin main
