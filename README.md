@@ -7,8 +7,10 @@
 
 ```
 index.html            版面與樣式（單檔）
-app.js                所有邏輯
+app.js                檢視端邏輯，對外開放 window.TripApp
+editor.js             「設定」分頁的表單編輯器
 data/trip.js          ★ 行程資料，平常只要改這個檔案
+data/presets.js       目的地預設（幣別、建議景點、打包清單）
 assets/icon.svg       App 圖示
 manifest.webmanifest  「加入主畫面」用
 sw.js                 Service Worker：出國沒網路也能開
@@ -17,16 +19,31 @@ sw.js                 Service Worker：出國沒網路也能開
 
 ## 怎麼改成自己的行程
 
-**方法 A（推薦）：直接改 `data/trip.js`**，存檔後 `git push`，網站幾十秒後自動更新。
+**方法 A（推薦）：在網頁上改。** 打開網站 → 底部「編輯」分頁，全部都是表單：
 
-**方法 B：在網頁上改。** 打開網站 → 底部「編輯」分頁 → 修改 JSON → 「套用預覽」立刻看效果
-→ 滿意後按「下載 trip.js」→ 覆蓋專案裡的 `data/trip.js` → push。
+1. **基本資料** — 目的地下拉選單、出發／回程日期、幣別、行程名稱。
+   按「套用基本資料」會依日期自動增減天數，選目的地會自動帶入幣別與打包清單。
+2. **航班資訊** — 去程／回程的航空公司、班號、機場、起降時間。填了就會出現在首頁與「今天」分頁。
+3. **每晚住宿** — 每一天一列，有「同前一晚」快捷鍵。
+4. **每日行程** — 每個行程點可新增、刪除、上下移動、複製，欄位含時間／名稱／說明／標籤／
+   預估花費／導航關鍵字；也可以從該目的地的建議景點清單一鍵加入，或延長、刪除某一天。
+5. **打包清單** — 一行一項，可一鍵帶入目的地的建議清單。
+
+改完的內容**即時存在你的瀏覽器**（只有你看得到）。要讓所有人看到，按「下載 trip.js」，
+覆蓋專案裡的 `data/trip.js`，再 `git push`。
+
+> 縮短天數或刪除某一天時，被移除的內容會暫存在這個分頁裡。
+> 只要不關掉分頁，把日期改回來或按「延長一天」就能原封不動救回來。
+
+**方法 B：直接改 `data/trip.js`**，存檔後 `git push`，網站幾十秒後自動更新。
 
 行程資料的欄位：
 
 ```js
 window.TRIP = {
   id: "okinawa-2026",          // 換一趟旅程就換 id（花費紀錄會分開存）
+  destId: "okinawa",           // 對應 data/presets.js，決定建議景點清單
+  destName: "沖繩",
   title: "沖繩 5 日自駕",
   subtitle: "副標題",
   startDate: "2026-08-31",     // 第一天，之後每天日期自動推算
@@ -37,6 +54,11 @@ window.TRIP = {
   highlights: ["去程 IT796 · 15:05"],
   categories: ["餐飲", "交通", "購物", "門票", "住宿", "其他"],
   checklist: ["護照", "駕照日文譯本"],
+  flights: {                   // 選填，兩段都可留空
+    outbound: { airline:"虎航", no:"IT796", date:"2026-12-07",
+                from:"TPE", depTime:"15:05", to:"OKA", arrTime:"17:50", note:"" },
+    inbound:  { }
+  },
   days: [{
     title: "抵達那霸",
     stay: { name: "旅館名稱", map: "導航關鍵字" },
@@ -54,6 +76,26 @@ window.TRIP = {
   }]
 };
 ```
+
+## 新增目的地
+
+`data/presets.js` 的 `destinations` 陣列決定「設定」分頁的目的地下拉選單。照格式加一筆即可：
+
+```js
+{
+  id: "kyushu", name: "九州", eyebrow: "KYUSHU",
+  currency: { code: "JPY", symbol: "¥", name: "日圓" },
+  tips: "給自己看的提醒",
+  checklist: ["護照", "駕照日文譯本"],
+  spots: [
+    { name: "太宰府天滿宮", desc: "說明文字", tag: "門票", cost: 500 }
+  ]
+}
+```
+
+`spots` 就是「從建議景點加入」下拉選單的來源，加入後仍可自由編輯。
+目前內建：沖繩、東京、大阪・京都、北海道、首爾、曼谷、峴港・會安、新加坡、香港，
+以及「其他（自行輸入）」。
 
 ## 佈署到 GitHub Pages
 
@@ -86,7 +128,8 @@ Source 選 **Deploy from a branch**，Branch 選 **main** / **/ (root)**，按 S
 |---|---|---|
 | 行程內容 | `data/trip.js`（在 repo 裡） | 所有人看到的都一樣，公開 |
 | 花費紀錄 | 瀏覽器 localStorage | 只在你自己的手機上，不會上傳；換裝置或清除瀏覽資料就沒了 |
-| 打包清單勾選 | 瀏覽器 localStorage | 同上 |
+| 打包清單勾選 | 瀏覽器 localStorage | 以項目文字記錄，清單改順序也不會勾錯 |
+| 編輯中的行程 | 瀏覽器 localStorage | 只有你看得到；按「下載 trip.js」覆蓋檔案後 push 才會公開 |
 | 匯率 | 線上抓取 + localStorage 快取 | 依序試 currency-api 與 open.er-api.com，失敗就用預設值，也可手動改 |
 
 > 花費是本機資料，**旅程結束前記得按「匯出 CSV」備份**。

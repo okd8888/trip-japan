@@ -146,6 +146,29 @@ textarea{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;
 @media (prefers-reduced-motion:reduce){.view.active{animation:none}}
 .chart img{width:100%;height:auto;border-radius:12px;border:1px solid var(--line);display:block}
 
+/* ---------- 編輯器 ---------- */
+.field{display:block;margin-bottom:9px}
+.field>span{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}
+.ed-item{background:var(--surface-2);border-radius:12px;padding:12px;margin-bottom:10px;border:1px solid transparent}
+.ed-item:focus-within{border-color:var(--accent)}
+.ed-item .ed-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:9px}
+.ed-item .ed-head b{font-size:12px;color:var(--muted);letter-spacing:.04em}
+.mini-row{display:flex;gap:4px;flex-wrap:wrap}
+.mini{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:4px 9px;font-size:12px;line-height:1.5}
+.mini:hover{border-color:var(--accent);color:var(--accent)}
+.mini.warn:hover{border-color:var(--hot);color:var(--hot)}
+.mini:disabled{opacity:.35;cursor:not-allowed}
+.stay-row{display:grid;grid-template-columns:92px minmax(0,1fr) minmax(0,1fr) auto;gap:8px;align-items:center;margin-bottom:8px}
+.stay-row .d{font-size:12px;color:var(--muted);font-weight:700}
+.saved{font-size:12px;color:var(--accent);opacity:0;transition:opacity .25s}
+.saved.on{opacity:1}
+details.adv{border-top:1px solid var(--line);margin-top:14px;padding-top:12px}
+details.adv summary{cursor:pointer;font-size:13px;font-weight:700;color:var(--muted)}
+details.adv[open] summary{margin-bottom:12px}
+.hint{background:var(--accent-soft);color:var(--accent);border-radius:10px;padding:10px 12px;font-size:12px;margin-bottom:12px}
+@media (max-width:860px){.grid3,.grid4{grid-template-columns:1fr 1fr}.stay-row{grid-template-columns:1fr;gap:6px}}
 @media (max-width:860px){
   .layout{grid-template-columns:1fr}
   .hero{padding:22px 18px;border-radius:20px}
@@ -192,6 +215,10 @@ textarea{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;
           <div class="card"><h3 id="countdownLabel">倒數</h3><p class="big" id="countdownValue">—</p></div>
           <div class="card"><h3>下一個亮點</h3><p id="nextHighlight">—</p></div>
           <div class="card accent"><h3>目前花費</h3><p class="big" id="todaySpend">—</p><p class="note" id="todaySpendSub"></p></div>
+        </div>
+        <div class="panel" id="flightPanel" hidden>
+          <div class="section-head"><div><p>來回</p><h2>航班</h2></div></div>
+          <div id="flightList"></div>
         </div>
         <div class="panel" id="checklistPanel" hidden>
           <div class="section-head"><div><p>出發前</p><h2>打包清單</h2></div><span class="pill" id="checkProgress">0/0</span></div>
@@ -279,18 +306,91 @@ textarea{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;
     </div>
   </section>
 
-  <!-- 設定 / 編輯 -->
+  <!-- 設定 -->
   <section id="view-edit" class="view">
     <div class="panel">
-      <div class="section-head"><div><p>把這個工具變成你自己的行程</p><h2>編輯行程資料</h2></div><span class="pill" id="editState">內建資料</span></div>
-      <p class="note">下面是這趟行程的 JSON。改完按「套用預覽」可立即看到效果（存在本機瀏覽器）；確定後按「下載 trip.js」，把檔案覆蓋到專案的 <code>data/trip.js</code> 再推上 GitHub，所有人打開網站就都會看到新版本。</p>
-      <textarea id="tripJson" spellcheck="false"></textarea>
-      <div class="btn-row" style="margin-top:10px">
-        <button class="btn" id="tripApply">套用預覽</button>
-        <button class="btn sub" id="tripDownload">下載 trip.js</button>
-        <button class="btn sub" id="tripFormat">格式化</button>
-        <button class="btn danger" id="tripReset">還原成檔案版本</button>
+      <div class="section-head"><div><p>第一步</p><h2>基本資料</h2></div><span class="pill" id="editState">檔案版本</span></div>
+      <div class="hint">選好目的地與日期後按「套用」，系統會自動帶入幣別、建立對應天數的行程框架。已經填好的內容不會被蓋掉。</div>
+      <label class="field"><span>行程名稱</span><input id="setTitle" placeholder="例如：沖繩 7 日自駕"></label>
+      <label class="field"><span>副標題（顯示在大標下方）</span><input id="setSubtitle" placeholder="例如：7 天 6 夜，今天去哪都在這一頁"></label>
+      <div class="row">
+        <label class="field"><span>目的地</span><select id="setDest"></select></label>
+        <label class="field"><span>目的地名稱（可自行修改）</span><input id="setDestName" placeholder="例如：石垣島"></label>
       </div>
+      <div class="row">
+        <label class="field"><span>出發日期</span><input id="setStart" type="date"></label>
+        <label class="field"><span>回程日期</span><input id="setEnd" type="date"></label>
+      </div>
+      <p class="note" id="setDaysInfo">—</p>
+      <div class="row">
+        <label class="field"><span>當地幣別</span><select id="setCur"></select></label>
+        <label class="field"><span>本國幣別</span><select id="setHome"></select></label>
+      </div>
+      <label class="field"><span>行程代號（換代號＝花費紀錄分開存放）</span><input id="setId" placeholder="okinawa-2026-12"></label>
+      <div class="btn-row">
+        <button class="btn" id="setApply">套用基本資料</button>
+        <button class="btn danger" id="setReset">清空成空白行程</button>
+      </div>
+      <p class="note" id="setMsg" style="margin-top:10px"></p>
+    </div>
+
+    <div class="panel">
+      <div class="section-head"><div><p>第二步</p><h2>航班資訊</h2></div><span class="saved" id="savedFlights">已儲存</span></div>
+      <p class="note" style="margin-bottom:12px">填了就會自動顯示在首頁大圖下方與「今天」分頁的航班卡；留空則不顯示。</p>
+      <div id="flightForm"></div>
+    </div>
+
+    <div class="panel">
+      <div class="section-head"><div><p>第三步</p><h2>每晚住宿</h2></div><span class="saved" id="savedStay">已儲存</span></div>
+      <div id="stayEditor"></div>
+    </div>
+
+    <div class="panel">
+      <div class="section-head"><div><p>第四步</p><h2>每日行程</h2></div><span class="saved" id="savedItems">已儲存</span></div>
+      <div class="day-tabs" id="edDayTabs"></div>
+      <div class="row">
+        <label class="field"><span>這一天的主題</span><input id="edDayTitle" placeholder="例如：古宇利島與美麗海水族館"></label>
+        <label class="field"><span>這一天的備註</span><input id="edDayNotes" placeholder="例如：路程最長，早點出發"></label>
+      </div>
+      <div id="itemEditor"></div>
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn" id="edAddItem">＋ 新增行程點</button>
+        <button class="btn sub" id="edAddDay">＋ 延長一天</button>
+        <button class="btn danger" id="edDelDay">刪除這一天</button>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <label class="field"><span>從建議景點加入</span><select id="edSpot"></select></label>
+        <div style="display:flex;align-items:flex-end"><button class="btn sub" id="edAddSpot" style="width:100%">加到這一天</button></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="section-head"><div><p>選配</p><h2>打包清單</h2></div><span class="saved" id="savedCheck">已儲存</span></div>
+      <p class="note" style="margin-bottom:10px">一行一項，會顯示在「今天」分頁並可勾選。</p>
+      <textarea id="edChecklist" style="min-height:160px;font-family:inherit;font-size:14px" placeholder="護照&#10;機票與訂房確認信&#10;網卡或漫遊"></textarea>
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn sub" id="edChecklistPreset">帶入目的地的建議清單</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="section-head"><div><p>最後一步</p><h2>發布到網站</h2></div></div>
+      <p class="note">以上修改都即時存在這台裝置的瀏覽器裡，只有你看得到。要讓所有人看到，請下載 <code>trip.js</code> 覆蓋專案的 <code>data/trip.js</code>，再 <code>git push</code>。</p>
+      <div class="btn-row" style="margin-top:12px">
+        <button class="btn" id="tripDownload">下載 trip.js</button>
+        <button class="btn sub" id="tripExport">匯出備份 JSON</button>
+        <button class="btn sub" id="tripImport">匯入 JSON</button>
+        <button class="btn danger" id="tripRevert">還原成檔案版本</button>
+      </div>
+      <input id="tripFile" type="file" accept="application/json,.json" hidden>
+      <details class="adv">
+        <summary>進階：直接編輯 JSON</summary>
+        <textarea id="tripJson" spellcheck="false"></textarea>
+        <div class="btn-row" style="margin-top:10px">
+          <button class="btn" id="jsonApply">套用 JSON</button>
+          <button class="btn sub" id="jsonFormat">格式化</button>
+        </div>
+      </details>
       <p class="note" id="tripMsg" style="margin-top:10px"></p>
     </div>
   </section>
@@ -304,7 +404,9 @@ textarea{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;
   </nav>
 </main>
 
+<script src="data/presets.js"></script>
 <script src="data/trip.js"></script>
 <script src="app.js"></script>
+<script src="editor.js"></script>
 </body>
 </html>
