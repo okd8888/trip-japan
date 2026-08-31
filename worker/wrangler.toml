@@ -10,3 +10,8 @@ compatibility_date = "2025-01-01"
 binding = "DB"
 database_name = "trip-sync"
 database_id = "PLACEHOLDER_RUN_WRANGLER_D1_CREATE"
+
+# 每天 UTC 21:00（台灣時間隔天早上 5 點）把「有人查過的」幣別組合更新一次，
+# 出門前開 App 就是現成的匯率，不用等線上抓取。
+[triggers]
+crons = ["0 21 * * *"]

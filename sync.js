@@ -172,7 +172,7 @@
     get config() { return { ...config }; },
     get version() { return version; },
     get status() { return { ...status }; },
-    enabled, canEdit, setConfig, disconnect, setStatus,
+    base, enabled, canEdit, setConfig, disconnect, setStatus,
     createTrip, pullTrip, pushTrip, syncExpenses, mergeExpenses,
     shareUrl, adoptFromUrl,
     onStatus(fn) { listeners.add(fn); return () => listeners.delete(fn); }

@@ -266,11 +266,22 @@
 
   const rateSources = () => {
     const a = CUR().code.toLowerCase(), b = HOME().code.toLowerCase();
-    return [
+    const list = [
       { name: 'currency-api', url: `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/${a}.json`, pick: d => d?.[a]?.[b] },
       { name: 'currency-api（備援）', url: `https://latest.currency-api.pages.dev/v1/currencies/${a}.json`, pick: d => d?.[a]?.[b] },
       { name: 'open.er-api.com', url: `https://open.er-api.com/v6/latest/${CUR().code}`, pick: d => d?.rates?.[HOME().code] }
     ];
+
+    /* 設了同步端點就排第 0 順位。出國時擋掉 CDN 的是「你當地的網路」，
+       Worker 在 Cloudflare 邊緣去抓不受影響，而且上游全掛時還有昨天的值可回，
+       不會一路掉到 trip.js 裡寫死的 defaultRate。只要端點就好，不需要行程碼。 */
+    const api = window.TripSync && window.TripSync.base();
+    if (api) list.unshift({
+      name: '自己的匯率端點',
+      url: `${api}/api/rate?from=${CUR().code}&to=${HOME().code}`,
+      pick: d => d?.rate
+    });
+    return list;
   };
 
   async function fetchRate() {

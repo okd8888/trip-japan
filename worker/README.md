@@ -66,6 +66,29 @@ npm run dev
 
 ---
 
+## 怎麼確認裝好了
+
+部署完先跑這三個，全部都不用開終端機以外的東西（把網址換成你自己的）：
+
+```bash
+# 1. 活著嗎
+curl https://trip-sync.你的帳號.workers.dev/api/health
+# 期望：{"ok":true}
+
+# 2. 匯率端點通嗎（第一次會去抓上游，cached 是 false）
+curl "https://trip-sync.你的帳號.workers.dev/api/rate?from=JPY&to=TWD"
+# 期望：{"rate":0.21...,"source":"currency-api","updatedAt":...,"cached":false}
+
+# 3. 再打一次，應該走快取
+curl "https://trip-sync.你的帳號.workers.dev/api/rate?from=JPY&to=TWD"
+# 期望：同樣的 rate，但 "cached":true
+```
+
+Windows 的 cmd 沒有 curl 的話，直接把網址貼到瀏覽器網址列也一樣。
+
+`/api/health` 有回應就代表 **Worker 活著、D1 綁對了、資料表也自動建好了**
+（資料表是在第一次收到請求時建的，所以這一步同時驗證了三件事）。
+
 ## 權限模型
 
 刻意做得很輕，因為使用情境是同行三五個人，不是公開服務：
@@ -93,6 +116,7 @@ npm run dev
 | `PUT` | `/api/trip/:code` | ✔ | 寫行程。帶 `version` 做樂觀鎖，撞到回 `409` 與伺服器現況 |
 | `GET` | `/api/expenses/:code?since=` | — | 增量拉取花費（含已刪除的墓碑） |
 | `POST` | `/api/expenses/:code` | ✔ | 推送花費，並把 `since` 之後的增量一起回傳 |
+| `GET` | `/api/rate?from=JPY&to=TWD` | — | 匯率。公開資料，不需要行程碼 |
 
 金鑰放在 `X-Edit-Key` 標頭。
 
@@ -101,6 +125,21 @@ npm run dev
 所以刪除是標記 `deleted:true` 同步出去，畫面上過濾掉。同一筆比 `updated_at`，後寫的贏。
 
 ---
+
+## 匯率端點
+
+網站本來就會自己去打三個公開匯率 API。設了同步端點之後，這支 Worker 會被排在**第 0 順位**。
+
+多這一層的理由只有一個：**出國當地的網路**。
+飯店 Wi-Fi 擋掉 jsdelivr、或行動網路慢到 timeout 時，原本會一路 fallback 到
+`trip.js` 裡寫死的 `defaultRate`，記帳的換算就開始不準。走 Worker 的話：
+
+- 去抓上游的是 Cloudflare 邊緣節點，**網路品質和你的手機無關**
+- 抓到就存進 D1，12 小時內的重複查詢直接走快取
+- **就算上游全掛，也還有昨天的值可以回**，不會掉到寫死的預設值
+- Cron Trigger 每天更新一次（只更新最近 30 天真的有人查過的幣別組合）
+
+端點掛掉時前端會自動往下一個來源試，所以多這一層不會讓事情變得更脆弱。
 
 ## 費用
 

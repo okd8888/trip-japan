@@ -161,7 +161,7 @@ Source 選 **Deploy from a branch**，Branch 選 **main** / **/ (root)**，按 S
 | 花費紀錄 | 瀏覽器 localStorage | 只在你自己的手機上，不會上傳；換裝置或清除瀏覽資料就沒了 |
 | 打包清單勾選 | 瀏覽器 localStorage | 以項目文字記錄，清單改順序也不會勾錯 |
 | 編輯中的行程 | 瀏覽器 localStorage | 只有你看得到；按「下載 trip.js」覆蓋檔案後 push 才會公開 |
-| 匯率 | 線上抓取 + localStorage 快取 | 依序試 currency-api 與 open.er-api.com，失敗就用預設值，也可手動改 |
+| 匯率 | 線上抓取 + localStorage 快取 | 設了同步端點就先問自己的 Worker，再依序試 currency-api 與 open.er-api.com，都失敗才用預設值，也可手動改 |
 | 同步設定 | 瀏覽器 localStorage | 端點、行程碼、編輯金鑰。**不會進 repo**，所以專案本身永遠是乾淨的範本 |
 | 同步的行程與花費 | **你自己的** Cloudflare D1 | 只有開了下面「跨裝置同步」才有；別人 fork 是開他自己的一份 |
 
@@ -179,6 +179,11 @@ Source 選 **Deploy from a branch**，Branch 選 **main** / **/ (root)**，按 S
 2. 拿到網址（`https://trip-sync.你的帳號.workers.dev`）。
 3. 回到網站的「編輯」分頁 → 最下面「跨裝置同步」→ 填端點 → 按「建立同步行程」。
 4. 按「複製分享連結」傳給同行的人，他們打開就是唯讀版本。
+
+**順帶拿到的好處：匯率會變穩。** 同一支 Worker 也提供 `/api/rate`，設好端點後它會被排在
+匯率來源的第 0 順位。出國時擋掉 CDN 的是「你當地的網路」，Cloudflare 邊緣節點去抓不受影響；
+就算上游全掛，也還有昨天的值可回，不會掉到 `trip.js` 裡寫死的 `defaultRate`。
+端點本身掛掉的話前端會自動往下一個來源試，不會更脆弱。
 
 **這個設計刻意讓專案保持成通用範本：**
 

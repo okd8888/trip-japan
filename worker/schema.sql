@@ -28,3 +28,13 @@ CREATE TABLE IF NOT EXISTS expenses (
 
 -- 增量同步靠這個索引：只撈 updated_at > since 的列
 CREATE INDEX IF NOT EXISTS idx_expenses_sync ON expenses (code, updated_at);
+
+-- 匯率快取。公開資料，不綁行程碼。
+-- asked_at 記錄「最後一次有人查這組幣別」，每天的排程只更新真的在用的組合。
+CREATE TABLE IF NOT EXISTS rates (
+  pair       TEXT PRIMARY KEY,   -- 例如 'JPY-TWD'
+  rate       REAL NOT NULL,
+  source     TEXT,
+  updated_at INTEGER NOT NULL,
+  asked_at   INTEGER NOT NULL
+);

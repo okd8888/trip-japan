@@ -24,7 +24,10 @@ const SCHEMA = [
      code TEXT NOT NULL, id TEXT NOT NULL, day INTEGER NOT NULL DEFAULT 0, category TEXT,
      amount REAL NOT NULL DEFAULT 0, note TEXT, rate REAL, date TEXT, by TEXT,
      deleted INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL, PRIMARY KEY (code, id))`,
-  `CREATE INDEX IF NOT EXISTS idx_expenses_sync ON expenses (code, updated_at)`
+  `CREATE INDEX IF NOT EXISTS idx_expenses_sync ON expenses (code, updated_at)`,
+  `CREATE TABLE IF NOT EXISTS rates (
+     pair TEXT PRIMARY KEY, rate REAL NOT NULL, source TEXT,
+     updated_at INTEGER NOT NULL, asked_at INTEGER NOT NULL)`
 ];
 
 let schemaReady = null;
@@ -212,6 +215,90 @@ async function postExpenses(request, env, code) {
   return json({ saved: batch.length, expenses: (results || []).map(rowToExpense), serverTime: now() });
 }
 
+/* ---------------- 匯率 ----------------
+ *
+ * 前端本來就會自己去打三個公開匯率 API，這個端點是插在它們前面的第 0 順位。
+ * 值得多這一層的理由只有一個：**出國當地的網路**。
+ * 飯店 Wi-Fi 擋掉 jsdelivr、或行動網路慢到 timeout 時，前端就會一路 fallback
+ * 到 trip.js 裡寫死的 defaultRate，記帳的換算就開始不準。
+ *
+ * 走這裡的話：Cloudflare 邊緣節點去抓上游（它的網路品質和你的手機無關），
+ * 抓到就存進 D1；就算上游全掛，也還有昨天的值可以回，不會掉回寫死的預設值。
+ * 這是公開資料，不需要行程碼也不需要金鑰。
+ */
+
+const RATE_FRESH_MS = 12 * 60 * 60 * 1000;   // 12 小時內的快取直接用
+const CODE_RE = /^[A-Za-z]{3}$/;
+
+/* 和前端同一組來源，順序也一樣 */
+function rateUpstreams(from, to) {
+  const a = from.toLowerCase(), b = to.toLowerCase();
+  return [
+    { name: 'currency-api', url: `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/${a}.json`, pick: d => d?.[a]?.[b] },
+    { name: 'currency-api（備援）', url: `https://latest.currency-api.pages.dev/v1/currencies/${a}.json`, pick: d => d?.[a]?.[b] },
+    { name: 'open.er-api.com', url: `https://open.er-api.com/v6/latest/${from}`, pick: d => d?.rates?.[to] }
+  ];
+}
+
+async function fetchUpstream(from, to) {
+  for (const s of rateUpstreams(from, to)) {
+    try {
+      const r = await fetch(s.url, { cf: { cacheTtl: 3600 } });
+      if (!r.ok) continue;
+      const v = Number(s.pick(await r.json()));
+      if (Number.isFinite(v) && v > 0) return { rate: v, source: s.name };
+    } catch (_) { /* 換下一個來源 */ }
+  }
+  return null;
+}
+
+async function saveRate(env, pair, got, t) {
+  await env.DB.prepare(
+    `INSERT INTO rates (pair, rate, source, updated_at, asked_at) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT (pair) DO UPDATE SET
+       rate = excluded.rate, source = excluded.source, updated_at = excluded.updated_at`
+  ).bind(pair, got.rate, got.source, t, t).run();
+}
+
+/* GET /api/rate?from=JPY&to=TWD */
+async function getRate(env, url) {
+  const from = String(url.searchParams.get('from') || '').toUpperCase();
+  const to   = String(url.searchParams.get('to') || '').toUpperCase();
+  if (!CODE_RE.test(from) || !CODE_RE.test(to)) return fail(400, 'from 與 to 必須是三個字母的幣別代碼');
+  if (from === to) return json({ rate: 1, source: '同一種幣別', updatedAt: now(), cached: false });
+
+  const pair = `${from}-${to}`, t = now();
+  const row = await env.DB.prepare('SELECT rate, source, updated_at FROM rates WHERE pair = ?').bind(pair).first();
+
+  /* 記下這組幣別有人在用，每天的排程只會去更新真的被查過的組合 */
+  if (row) await env.DB.prepare('UPDATE rates SET asked_at = ? WHERE pair = ?').bind(t, pair).run();
+
+  if (row && t - row.updated_at < RATE_FRESH_MS) {
+    return json({ rate: row.rate, source: row.source, updatedAt: row.updated_at, cached: true });
+  }
+
+  const got = await fetchUpstream(from, to);
+  if (got) {
+    await saveRate(env, pair, got, t);
+    return json({ rate: got.rate, source: got.source, updatedAt: t, cached: false });
+  }
+
+  /* 上游全掛：有舊值就回舊值，總比讓前端掉回寫死的 defaultRate 好 */
+  if (row) return json({ rate: row.rate, source: row.source + '（過期快取）', updatedAt: row.updated_at, cached: true, stale: true });
+  return fail(502, '上游匯率來源目前都取不到');
+}
+
+/* 每天排程：只更新最近 30 天有人查過的幣別組合 */
+async function refreshRates(env) {
+  const cutoff = now() - 30 * 24 * 60 * 60 * 1000;
+  const { results } = await env.DB.prepare('SELECT pair FROM rates WHERE asked_at > ?').bind(cutoff).all();
+  for (const { pair } of results || []) {
+    const [from, to] = pair.split('-');
+    const got = await fetchUpstream(from, to);
+    if (got) await saveRate(env, pair, got, now());
+  }
+}
+
 /* ---------------- 路由 ---------------- */
 
 export default {
@@ -227,6 +314,11 @@ export default {
 
     try {
       if (parts[0] === 'api' && parts[1] === 'health') return json({ ok: true });
+
+      if (parts[0] === 'api' && parts[1] === 'rate') {
+        if (request.method !== 'GET') return fail(405, '不支援的方法');
+        return await getRate(env, url);
+      }
 
       if (parts[0] === 'api' && parts[1] === 'trip') {
         const code = parts[2];
@@ -251,5 +343,10 @@ export default {
     } catch (err) {
       return fail(400, err.message || '請求處理失敗');
     }
+  },
+
+  /* Cron Trigger：每天先把匯率抓好放著，早上開 App 就是現成的 */
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(ensureSchema(env).then(() => refreshRates(env)));
   }
 };
