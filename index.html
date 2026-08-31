@@ -72,6 +72,8 @@ a{color:var(--accent)}
 .stop .time{font-size:12px;font-weight:800;color:var(--accent);letter-spacing:.03em;padding-top:3px;word-break:break-all}
 .stop h3{margin:0 0 4px;font-size:16px}
 .stop .desc{margin:0;font-size:13px;color:var(--muted)}
+.leg{margin-left:64px;padding:5px 0;font-size:12px;color:var(--muted);border-top:1px dashed var(--line)}
+.leg.far{color:var(--hot);font-weight:700}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center}
 .tag{background:var(--hot-soft);color:var(--hot);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700}
 .tag.cost{background:var(--accent-soft);color:var(--accent)}
@@ -168,12 +170,17 @@ details.adv{border-top:1px solid var(--line);margin-top:14px;padding-top:12px}
 details.adv summary{cursor:pointer;font-size:13px;font-weight:700;color:var(--muted)}
 details.adv[open] summary{margin-bottom:12px}
 .hint{background:var(--accent-soft);color:var(--accent);border-radius:10px;padding:10px 12px;font-size:12px;margin-bottom:12px}
+.choice{background:var(--hot-soft);border-radius:10px;padding:10px 12px;margin-bottom:12px}
+.choice b{display:block;font-size:12px;color:var(--hot);margin-bottom:6px}
+.choice label{display:flex;align-items:center;gap:8px;font-size:13px;padding:3px 0}
+.choice label input{flex:0 0 auto;width:auto;padding:0;margin:0}
 @media (max-width:860px){.grid3,.grid4{grid-template-columns:1fr 1fr}.stay-row{grid-template-columns:1fr;gap:6px}}
 @media (max-width:860px){
   .layout{grid-template-columns:1fr}
   .hero{padding:22px 18px;border-radius:20px}
   .app{padding:14px 12px calc(96px + env(safe-area-inset-bottom))}
   .stop{grid-template-columns:56px minmax(0,1fr)}
+  .leg{margin-left:56px}
   .row{grid-template-columns:1fr}
 }
 </style>
@@ -310,7 +317,7 @@ details.adv[open] summary{margin-bottom:12px}
   <section id="view-edit" class="view">
     <div class="panel">
       <div class="section-head"><div><p>第一步</p><h2>基本資料</h2></div><span class="pill" id="editState">檔案版本</span></div>
-      <div class="hint">選好目的地與日期後按「套用」，系統會自動帶入幣別、建立對應天數的行程框架。已經填好的內容不會被蓋掉。</div>
+      <div class="hint">選好目的地與日期後按「套用設定」即可。若動到目的地或天數，套用前會先跳出「即將變更」摘要讓你確認。</div>
       <label class="field"><span>行程名稱</span><input id="setTitle" placeholder="例如：沖繩 7 日自駕"></label>
       <label class="field"><span>副標題（顯示在大標下方）</span><input id="setSubtitle" placeholder="例如：7 天 6 夜，今天去哪都在這一頁"></label>
       <div class="row">
@@ -322,15 +329,18 @@ details.adv[open] summary{margin-bottom:12px}
         <label class="field"><span>回程日期</span><input id="setEnd" type="date"></label>
       </div>
       <p class="note" id="setDaysInfo">—</p>
+      <div class="choice" id="setRebuildChoice" hidden>
+        <b>目的地換了，每日行程要怎麼處理？</b>
+        <label><input type="radio" name="rebuildMode" value="rebuild" checked> 依新目的地重新產生（覆蓋現有行程）</label>
+        <label><input type="radio" name="rebuildMode" value="keep"> 保留現有行程</label>
+      </div>
       <div class="row">
         <label class="field"><span>當地幣別</span><select id="setCur"></select></label>
         <label class="field"><span>本國幣別</span><select id="setHome"></select></label>
       </div>
       <label class="field"><span>行程代號（換代號＝花費紀錄分開存放）</span><input id="setId" placeholder="okinawa-2026-12"></label>
       <div class="btn-row">
-        <button class="btn" id="setApply">套用基本資料</button>
-        <button class="btn sub" id="setRebuild">依目的地重新產生行程</button>
-        <button class="btn danger" id="setReset">清空成空白行程</button>
+        <button class="btn" id="setApply">套用設定</button>
       </div>
       <p class="note" id="setMsg" style="margin-top:10px"></p>
     </div>
@@ -360,9 +370,15 @@ details.adv[open] summary{margin-bottom:12px}
         <button class="btn danger" id="edDelDay">刪除這一天</button>
       </div>
       <div class="row" style="margin-top:12px">
-        <label class="field"><span>從建議景點加入</span><select id="edSpot"></select></label>
+        <label class="field"><span>從建議景點／美食加入</span><select id="edSpot"></select></label>
         <div style="display:flex;align-items:flex-end"><button class="btn sub" id="edAddSpot" style="width:100%">加到這一天</button></div>
       </div>
+      <p class="note" style="margin-top:16px">整趟重排（住宿與航班會保留）：</p>
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn sub" id="setRebuild">依目的地重新產生全部行程</button>
+        <button class="btn danger" id="setReset">清空成空白行程</button>
+      </div>
+      <p class="note" id="rebuildMsg" style="margin-top:10px"></p>
     </div>
 
     <div class="panel">

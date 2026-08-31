@@ -33,6 +33,19 @@
   const money = (n, c) => `${c.symbol}${num(Math.round(n))}`;
   const mapUrl = q => 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(q);
 
+  /* 車程估算：直線距離 × 1.35（一般道路繞路係數）÷ 平均時速 40 km/h。
+     不需要任何 API 金鑰，離線可用，誤差約 ±15%，足夠判斷「會不會開太久」。 */
+  const DETOUR = 1.35, KMH = 40;
+  const hasGeo = p => p && typeof p.lat === 'number' && typeof p.lng === 'number';
+  function driveInfo(a, b) {
+    if (!hasGeo(a) || !hasGeo(b)) return null;
+    const rad = d => d * Math.PI / 180;
+    const dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+    const km = 6371 * 2 * Math.asin(Math.sqrt(h)) * DETOUR;
+    return { km, min: Math.round(km / KMH * 60) };
+  }
+
   const startDate = () => parseDate(trip.startDate);
   const dateOf = i => { const s = startDate(); return s ? addDays(s, i) : null; };
   /* dayOffset：今天與出發日相差幾天（負數＝還沒出發） */
@@ -113,7 +126,18 @@
     </article>`;
   }
 
-  const timelineHtml = day => (day.items || []).map(stopHtml).join('') || '<p class="empty">這一天還沒有安排，到「設定」分頁加入行程點。</p>';
+  /* 兩站之間的車程；超過 90 分鐘標紅提醒 */
+  function legHtml(a, b) {
+    const d = driveInfo(a, b);
+    if (!d || d.min < 3) return '';
+    return `<div class="leg${d.min > 90 ? ' far' : ''}">🚗 車程約 ${d.min} 分・${d.km.toFixed(0)} km${d.min > 90 ? '（偏長，考慮拆天或換順序）' : ''}</div>`;
+  }
+
+  const timelineHtml = day => {
+    const items = day.items || [];
+    if (!items.length) return '<p class="empty">這一天還沒有安排，到「設定」分頁加入行程點。</p>';
+    return items.map((it, i) => (i ? legHtml(items[i - 1], it) : '') + stopHtml(it)).join('');
+  };
 
   function stayInner(day) {
     if (!day.stay || !day.stay.name) return '';
@@ -410,7 +434,7 @@
       renderAll();
     },
     clearOverride() { localStorage.removeItem(OVERRIDE_KEY); trip = fileTrip; usingOverride = false; renderAll(); },
-    renderAll, showView, download, esc, fmtDate, parseDate, iso, addDays, dayCount,
+    renderAll, showView, download, esc, fmtDate, parseDate, iso, addDays, dayCount, driveInfo,
     get selectedDay() { return selectedDay; },
     set selectedDay(v) { selectedDay = v; renderPlan(); }
   };

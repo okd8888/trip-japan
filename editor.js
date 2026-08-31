@@ -12,6 +12,7 @@
   let draft = clone(T.trip);
   let edDay = 0;
   let trimmed = [];   // 這次縮短天數時被裁掉的日子，重新延長時可救回（只存在本次瀏覽）
+  let lastLeft = 0;   // 上一次重排後沒排進行程的建議景點數
 
   const days = () => (draft.days || (draft.days = []));
   const curCode = () => (draft.currency || {}).code || 'JPY';
@@ -21,6 +22,8 @@
   /* 「福岡・九州」→「福岡」，用在標題與導航關鍵字 */
   const shortName = n => String(n || '').split('・')[0].trim();
   const findCur = code => P.currencies.find(c => c.code === code);
+  /* 花費紀錄以行程代號分開存放（app.js 的 KEY.exp），換代號＝換一本帳本 */
+  const ledgerCount = id => { try { return (JSON.parse(localStorage.getItem(`expenses:${id}`) || '[]') || []).length; } catch (_) { return 0; } };
 
   const commit = () => T.setTrip(clone(draft));
   const flash = sel => { const e = $(sel); if (!e) return; e.classList.add('on'); setTimeout(() => e.classList.remove('on'), 1400); };
@@ -45,7 +48,15 @@
     const e = endDate();
     $('#setEnd').value = e ? T.iso(e) : '';
     updateDaysInfo();
+    updateRebuildChoice();
     $('#editState').textContent = T.usingOverride ? '本機修改版' : '檔案版本';
+  }
+
+  /* 只有「目的地被改動」時才需要問行程要不要跟著換 —— 把決定拉到按下套用之前 */
+  function updateRebuildChoice() {
+    const changed = $('#setDest').value !== draft.destId;
+    $('#setRebuildChoice').hidden = !changed;
+    if (!changed) $('input[name="rebuildMode"][value="rebuild"]').checked = true;
   }
 
   function updateDaysInfo() {
@@ -54,7 +65,7 @@
     const n = T.dayCount(s, e) + 1;
     $('#setDaysInfo').textContent = n < 1
       ? '⚠️ 回程日期不能早於出發日期。'
-      : `共 ${n} 天 ${n - 1} 夜　（目前行程有 ${days().length} 天，按「套用基本資料」會調整成 ${n} 天）`;
+      : `共 ${n} 天 ${n - 1} 夜　（目前行程有 ${days().length} 天，按「套用設定」會調整成 ${n} 天）`;
   }
 
   function applyBasic() {
@@ -65,26 +76,54 @@
     if (n > 60) return msg('#setMsg', '天數超過 60 天，請確認日期是否正確。', false);
 
     const len = days().length;
-    if (n < len && !confirm(`天數從 ${len} 天縮短為 ${n} 天，第 ${n + 1} 天之後的行程會被移除。\n（在關掉這個分頁前，把日期改回來就能救回）確定嗎？`)) return;
+    const destId = $('#setDest').value;
+    const dest = findDest(destId), prevDest = findDest(draft.destId);
+    const destChanged = draft.destId !== destId;
+    const spots = dest ? (dest.spots || []) : [];
+    const hasContent = days().some(d => (d.items || []).length);
+    const prevId = draft.id;
+    const newId = $('#setId').value.trim() || `${destId}-${$('#setStart').value.slice(0, 7)}`;
+    const idChanged = !!prevId && newId !== prevId;
+    const mode = ($('input[name="rebuildMode"]:checked') || {}).value;
+    const willRebuild = destChanged && spots.length > 0 && mode !== 'keep';
 
-    const dest = findDest($('#setDest').value);
-    const prevDest = findDest(draft.destId);
+    /* 即將變更摘要：把原本散在三處的 confirm 收成一次確認，沒有破壞性改動就直接套用 */
+    const plan = [], risky = [];
+    if (destChanged) plan.push(`目的地：${prevDest ? prevDest.name : '未設定'} → ${dest ? dest.name : destId}`);
+    if (n !== len) plan.push(`天數：${len} → ${n} 天`);
+    if (n < len) risky.push(`Day ${n + 1} 之後的 ${len - n} 天行程會被移除（改回日期就能救回）`);
+    if (willRebuild) {
+      plan.push(`每日行程：依「${dest.name}」的 ${spots.length} 個景點重新產生`);
+      if (hasContent) risky.push('目前每一天的行程點都會被覆蓋');
+      if (destChanged) plan.push('住宿：一併清空（換了目的地，舊飯店名沒有意義）');
+    } else if (destChanged && hasContent) {
+      plan.push('每日行程：保留現有內容不動');
+    }
+    if (idChanged) plan.push(`行程代號：${prevId} → ${newId}`);
+    const dropHighlights = destChanged && (draft.highlights || []).length;
+    if (dropHighlights) plan.push('首頁重點標籤：清空（原本寫的是上一個目的地的資訊）');
+    if (risky.length && !confirm(
+      '即將變更：\n' + plan.map(x => '・' + x).join('\n') +
+      '\n\n請注意：\n' + risky.map(x => '⚠ ' + x).join('\n') +
+      '\n\n確定套用嗎？')) return;
+
     /* 打包清單：使用者沒改過（仍等於原目的地的預設）才跟著新目的地換 */
     const untouchedChecklist = !draft.checklist || !draft.checklist.length ||
       (prevDest && JSON.stringify(draft.checklist) === JSON.stringify(prevDest.checklist || []));
-    const destChanged = draft.destId !== $('#setDest').value;
-    draft.destId = $('#setDest').value;
+    draft.destId = destId;
     draft.destName = $('#setDestName').value.trim() || (dest ? dest.name : '');
     draft.title = $('#setTitle').value.trim() || `${draft.destName} ${n} 日遊`;
     draft.subtitle = $('#setSubtitle').value.trim();
     draft.eyebrow = (dest && dest.id !== 'custom' ? dest.eyebrow : (draft.destName || 'TRIP')).toUpperCase();
-    draft.id = $('#setId').value.trim() || `${draft.destId}-${$('#setStart').value.slice(0, 7)}`;
+    draft.id = newId;
     draft.startDate = $('#setStart').value;
     draft.currency = findCur($('#setCur').value) || draft.currency;
     draft.homeCurrency = findCur($('#setHome').value) || draft.homeCurrency;
     if (!draft.categories || !draft.categories.length) draft.categories = clone(P.categories);
     if (dest && (destChanged || !draft.checklist) && untouchedChecklist) draft.checklist = clone(dest.checklist || []);
     if (!draft.defaultRate) draft.defaultRate = 0.21;
+    /* highlights 只在首頁大圖顯示、編輯器裡看不到，換了目的地就一定是錯的 */
+    if (dropHighlights) draft.highlights = [];
 
     if (n > len) {
       /* 先把剛才被裁掉的日子接回來，不夠的才補空白 */
@@ -93,77 +132,206 @@
     if (n < len) { trimmed = days().slice(n).concat(trimmed); draft.days = days().slice(0, n); }
 
     if (edDay >= days().length) edDay = days().length - 1;
-    commit(); renderAll();
+    commit();
 
-    const empty = days().every(d => !(d.items || []).length);
-    if (destChanged && dest && (dest.spots || []).length && empty) {
-      rebuildFromDest(true);
-      msg('#setMsg', `已套用：${draft.title}，共 ${n} 天，並帶入「${dest.name}」的建議行程。`);
-    } else if (destChanged && dest) {
-      msg('#setMsg', `已套用：${draft.title}，共 ${n} 天。` +
-        `目的地已改為「${dest.name}」，但每日行程仍是舊的 —— ` +
-        `要一併換掉請按「依目的地重新產生行程」。`);
-    } else {
-      msg('#setMsg', `已套用：${draft.title}，共 ${n} 天。`);
+    const done = willRebuild && rebuildFromDest({ silent: true, clearStay: destChanged });
+    renderAll();
+
+    const note = [`已套用：${draft.title}，共 ${n} 天。`];
+    if (done) note.push(`每日行程已依「${dest.name}」重新產生，可再自行增刪。` +
+      (lastLeft ? `（另有 ${lastLeft} 個建議景點沒排進去，可在「每日行程」用下拉清單補上）` : ''));
+    else if (destChanged && !willRebuild) note.push('每日行程維持原樣。');
+    else if (destChanged && !spots.length) note.push(`「${dest ? dest.name : destId}」還沒有建議景點，請到下方「每日行程」手動新增。`);
+    if (idChanged) {
+      const k = ledgerCount(prevId);
+      note.push(k
+        ? `花費已切換到新帳本「${newId}」；舊代號「${prevId}」的 ${k} 筆紀錄仍留在這台裝置上，把代號改回去就會再出現。`
+        : `花費帳本已切換到「${newId}」（舊代號沒有紀錄）。`);
     }
+    msg('#setMsg', note.join('　'));
   }
 
   const blankDay = () => ({ title: '', stay: { name: '', map: '' }, notes: '', items: [] });
 
-  /* 依目的地的建議景點，把整趟行程重排一次（保留航班、住宿、打包清單） */
-  function rebuildFromDest(silent = false) {
+  /* ======================= 依目的地重排行程 =======================
+     排法：區域（areas）已依自駕動線排好 → 依各區景點數把天數分配下去 →
+     每天只落在同一區，時間表用「停留時間＋估算車程」累加，並插入該區的餐廳。
+     沒有經緯度的目的地（例如東京、首爾）退回原本的固定時段排法。            */
+  const MEAL = { lunch: 11 * 60 + 30, dinner: 18 * 60 };
+  const hhmm = m => { const r = Math.round(m / 5) * 5; return `${String(Math.floor(r / 60) % 24).padStart(2, '0')}:${String(r % 60).padStart(2, '0')}`; };
+  const driveMin = (a, b) => ((T.driveInfo(a, b) || {}).min) || 15;
+
+  /* 最大餘數法：天數依各區景點數按比例分配，分不到的區併進前一天 */
+  function allocDays(groups, n) {
+    const total = groups.reduce((sum, g) => sum + g.length, 0);
+    const raw = groups.map(g => g.length / total * n);
+    const alloc = raw.map(Math.floor);
+    let rest = n - alloc.reduce((a, b) => a + b, 0);
+    raw.map((x, i) => [x - Math.floor(x), i]).sort((a, b) => b[0] - a[0])
+      .forEach(([, i]) => { if (rest > 0) { alloc[i]++; rest--; } });
+    return alloc;
+  }
+
+  function splitByArea(spots, areas, n) {
+    const ids = (areas || []).map(a => a.id);
+    const groups = ids.map(id => spots.filter(sp => sp.area === id));
+    const rest = spots.filter(sp => !ids.includes(sp.area));
+    if (rest.length) groups.push(rest);
+    const used = groups.filter(g => g.length);
+    if (!used.length) return Array.from({ length: n }, () => []);
+
+    const alloc = allocDays(used, n), out = [];
+    used.forEach((g, i) => {
+      const k = alloc[i];
+      if (!k) {
+        /* 天數不夠、分不到一天的區：離前一天太遠就不硬塞（會變成單日長途移動），
+           讓它留在「沒排進去的建議景點」裡，由使用者決定要不要加 */
+        const prev = out[out.length - 1];
+        if (!prev) out.push(g.slice());
+        else if (driveMin(prev[prev.length - 1], g[0]) <= 90) prev.push(...g);
+        return;
+      }
+      const base = Math.floor(g.length / k), extra = g.length % k;
+      let p = 0;
+      for (let d = 0; d < k; d++) { const size = base + (d < extra ? 1 : 0); out.push(g.slice(p, p + size)); p += size; }
+    });
+    while (out.length < n) out.push([]);
+    return out.slice(0, n);
+  }
+
+  /* 同一趟不重複推薦同一家店；找不到同區的就退而求其次挑任何一家 */
+  function foodPicker(dest) {
+    const used = new Set(), all = dest.foods || [];
+    return (areas, meal, at) => {
+      /* meal 沒填＝午晚餐都可以；標了 snack 的點心不會被當成正餐 */
+      const pool = all.filter(f => !f.meal || f.meal === meal);
+      const near = list => (at ? list.slice().sort((a, b) => driveMin(at, a) - driveMin(at, b)) : list)[0];
+      const inArea = pool.filter(f => areas.includes(f.area));
+      /* 優先同區沒推薦過的；同區選完了寧可再吃一次，也不要為了換一家開一小時 */
+      const f = near(inArea.filter(f => !used.has(f.name))) || near(inArea) || near(pool);
+      if (f) used.add(f.name);
+      return f;
+    };
+  }
+
+  const spotItem = (sp, t) => ({
+    time: hhmm(t), name: sp.name, desc: sp.desc || '',
+    ...(sp.tag ? { tag: sp.tag } : {}), ...(sp.cost ? { cost: sp.cost } : {}),
+    ...(typeof sp.lat === 'number' ? { lat: sp.lat, lng: sp.lng } : {})
+  });
+
+  /* 一天的時間表；用餐後直接接下一站，不再另計餐廳到景點的車程（同區內通常 10 分鐘內） */
+  function buildItems(picked, pickFood, opts) {
+    const items = [], areas = [...new Set(picked.map(sp => sp.area))];
+    let t = opts.start, prev = null, lunch = opts.lunch === false, dinner = false;
+
+    const eat = (label, key) => {
+      const f = pickFood(areas, key, prev);
+      items.push(f
+        ? { time: hhmm(t), name: `${label}：${f.name}`, desc: f.desc || '', tag: label,
+            ...(f.cost ? { cost: f.cost } : {}),
+            ...(typeof f.lat === 'number' ? { lat: f.lat, lng: f.lng } : {}) }
+        : { time: hhmm(t), name: `${label}：在地食堂`, desc: '沿路挑一家順路的店，或前一晚先查好備案。', tag: label });
+      if (f && typeof f.lat === 'number') prev = f;
+      t += 60;
+    };
+
+    picked.forEach(sp => {
+      if (prev) t += driveMin(prev, sp);
+      if (!lunch && t >= MEAL.lunch) { lunch = true; eat('午餐', 'lunch'); }
+      else if (lunch && !dinner && t >= MEAL.dinner) { dinner = true; eat('晚餐', 'dinner'); }
+      items.push(spotItem(sp, t));
+      t += sp.stay || 60;
+      prev = sp;
+    });
+    /* 最後一站結束才過午／過晚的日子，補上這兩餐 */
+    if (!lunch && t < MEAL.dinner) { lunch = true; t = Math.max(t, MEAL.lunch); eat('午餐', 'lunch'); }
+    if (opts.dinner && !dinner) { t = Math.max(t, MEAL.dinner); eat('晚餐', 'dinner'); }
+    return items;
+  }
+
+  function rebuildFromDest(opts = {}) {
+    const { silent = false, clearStay = false } = opts;
+    const out = silent ? null : '#rebuildMsg';
     const dest = findDest(draft.destId);
     const spots = dest ? (dest.spots || []) : [];
     const n = days().length;
-    if (!n) { if (!silent) msg('#setMsg', '請先設定出發與回程日期。', false); return false; }
+    if (!n) { if (out) msg(out, '請先設定出發與回程日期。', false); return false; }
     if (!spots.length) {
-      if (!silent) msg('#setMsg',
+      if (out) msg(out,
         `「${draft.destName || '這個目的地'}」還沒有建議景點清單，無法自動產生。` +
-        '請在下方「每日行程」手動新增，或在 data/presets.js 補上這個目的地的 spots。', false);
+        '請在上面手動新增，或在 data/presets.js 補上這個目的地的 spots。', false);
       return false;
     }
-    const hasContent = days().some(d => (d.items || []).length);
-    if (!silent && hasContent && !confirm(
+    if (!silent && days().some(d => (d.items || []).length) && !confirm(
       `會用「${dest.name}」的 ${spots.length} 個建議景點重新排出 ${n} 天行程，` +
-      `目前每一天的行程點都會被覆蓋。\n（航班與打包清單會保留）確定嗎？`)) return false;
+      '目前每一天的行程點都會被覆蓋。\n（航班、住宿與打包清單會保留）確定嗎？')) return false;
 
-    /* 住宿是另一回事：換目的地時舊飯店名沒意義，但重排同一個目的地時通常要留著 */
-    const hasStay = days().some(d => d.stay && d.stay.name);
-    const clearStay = !silent && hasStay &&
-      confirm('要一併清空住宿飯店嗎？\n按「確定」清空，按「取消」保留現有飯店名稱。');
-
-    const TIMES = ['09:00', '10:30', '12:00', '14:00', '16:00', '18:00'];
-    const per = Math.max(1, Math.min(5, Math.ceil(spots.length / n)));
     const name = shortName(draft.destName || dest.name);
-    let k = 0;
+    const geo = spots.some(sp => typeof sp.lat === 'number');
+    const areaName = id => ((dest.areas || []).find(a => a.id === id) || {}).name || '';
 
-    for (let i = 0; i < n; i++) {
-      const picked = spots.slice(k, k + per); k += per;
-      const items = picked.map((sp, j) => ({
-        time: TIMES[Math.min(j, TIMES.length - 1)],
-        name: sp.name, desc: sp.desc || '',
-        ...(sp.tag ? { tag: sp.tag } : {}),
-        ...(sp.cost ? { cost: sp.cost } : {})
-      }));
-      if (i === 0) items.unshift({ time: '抵達', name: `抵達${name}`, desc: '入境、領行李，前往市區飯店。', map: name });
-      if (i === n - 1) items.push({ time: '返程', name: '前往機場・返程', desc: '抓起飛前 2.5 小時到機場。', map: `${name} 機場` });
-      days()[i].items = items;
-      if (clearStay) days()[i].stay = { name: '', map: '' };
-      days()[i].title = i === 0 ? `抵達${name}`
-        : (i === n - 1 ? `最後採買・返程`
-        : (picked.length ? picked.slice(0, 2).map(sp => sp.name).join('・') : `${name} 自由行`));
+    if (!geo) {
+      /* 沒有經緯度的目的地：維持原本的固定時段平均切法 */
+      const TIMES = ['09:00', '10:30', '12:00', '14:00', '16:00', '18:00'];
+      const per = Math.max(1, Math.min(5, Math.ceil(spots.length / n)));
+      let k = 0;
+      for (let i = 0; i < n; i++) {
+        const picked = spots.slice(k, k + per); k += per;
+        const items = picked.map((sp, j) => ({ ...spotItem(sp, 0), time: TIMES[Math.min(j, TIMES.length - 1)] }));
+        writeDay(i, n, items, picked, name, clearStay, '');
+      }
+    } else {
+      const plan = splitByArea(spots, dest.areas, n);
+      const pickFood = foodPicker(dest);
+      for (let i = 0; i < n; i++) {
+        const first = i === 0, last = i === n - 1;
+        /* 第一天下午才落地、最後一天要趕飛機，各只排 3 站 */
+        const picked = first ? plan[i].slice(0, 3) : (last ? plan[i].slice(-3) : plan[i]);
+        const items = buildItems(picked, pickFood, {
+          start: first ? 15 * 60 : 9 * 60,
+          lunch: !first,          // 下午才落地，第一餐直接算晚餐
+          dinner: !last
+        });
+        const areas = [...new Set(picked.map(sp => areaName(sp.area)))].filter(Boolean);
+        writeDay(i, n, items, picked, name, clearStay,
+          areas.length ? `今天主要在${areas.join('、')}一帶活動。` : '');
+      }
     }
+
     edDay = 0;
-    commit(); renderAll();
-    if (!silent) msg('#setMsg', `已依「${dest.name}」重新產生 ${n} 天行程，可再自行增刪調整。`);
+    commit();
+    /* 第一天與最後一天各只排 3 站，景點多的目的地會用不完 —— 講清楚，別讓人以為漏掉了 */
+    const used = new Set();
+    days().forEach(d => (d.items || []).forEach(it => used.add(it.name)));
+    const left = spots.filter(sp => !used.has(sp.name)).length;
+    lastLeft = left;
+    if (!silent) {
+      renderAll();
+      msg(out, `已依「${dest.name}」重新產生 ${n} 天行程，可再自行增刪調整。` +
+        (left ? `　另有 ${left} 個建議景點沒排進去，可用下方的「從建議景點／美食加入」補上。` : ''));
+    }
     return true;
+  }
+
+  /* 寫回第 i 天：補上抵達／返程，並決定標題與備註 */
+  function writeDay(i, n, items, picked, name, clearStay, notes) {
+    if (i === 0) items.unshift({ time: '抵達', name: `抵達${name}`, desc: '入境、領行李、取車，再前往第一晚的落腳處。', map: name });
+    if (i === n - 1) items.push({ time: '返程', name: '前往機場・返程', desc: '先加滿油拿收據再還車，抓起飛前 2.5 小時到機場。', map: `${name} 機場` });
+    const day = days()[i];
+    day.items = items;
+    day.notes = notes;
+    if (clearStay) day.stay = { name: '', map: '' };
+    day.title = i === 0 ? `抵達${name}`
+      : (i === n - 1 ? '最後採買・返程'
+      : (picked.length ? picked.slice(0, 2).map(sp => sp.name).join('・') : `${name} 自由行`));
   }
 
   function resetBlank() {
     if (!confirm('會清空所有天數的行程點與住宿（保留目的地與日期設定）。確定嗎？')) return;
     draft.days = days().map(() => blankDay());
     commit(); renderAll();
-    msg('#setMsg', '已清空成空白行程。');
+    msg('#rebuildMsg', '已清空成空白行程。');
   }
 
   /* ================= 航班 ================= */
@@ -241,10 +409,14 @@
 
     const dest = findDest(draft.destId);
     const spots = dest ? (dest.spots || []) : [];
-    $('#edSpot').innerHTML = spots.length
-      ? spots.map((s, i) => `<option value="${i}">${esc(s.name)}</option>`).join('')
-      : '<option value="">（這個目的地還沒有建議景點）</option>';
-    $('#edAddSpot').disabled = !spots.length;
+    const foods = dest ? (dest.foods || []) : [];
+    const opts = (arr, kind) => arr.map((x, i) =>
+      `<option value="${kind}:${i}">${esc(x.name)}</option>`).join('');
+    $('#edSpot').innerHTML = (spots.length || foods.length)
+      ? (spots.length ? `<optgroup label="景點">${opts(spots, 's')}</optgroup>` : '') +
+        (foods.length ? `<optgroup label="美食">${opts(foods, 'f')}</optgroup>` : '')
+      : '<option value="">（這個目的地還沒有建議清單）</option>';
+    $('#edAddSpot').disabled = !(spots.length || foods.length);
   }
 
   /* ================= 打包清單 ================= */
@@ -277,6 +449,7 @@
         $('#setCur').value = d.currency.code;
         if (!$('#setTitle').value.trim() && d.id !== 'custom') $('#setTitle').value = `${shortName(d.name)} 之旅`;
       }
+      updateRebuildChoice();
       return;
     }
 
@@ -353,10 +526,13 @@
         break;
 
       case 'edAddSpot': {
-        const dest = findDest(draft.destId), i = +$('#edSpot').value;
-        const s = dest && dest.spots[i];
+        const dest = findDest(draft.destId);
+        const [kind, idx] = String($('#edSpot').value).split(':');
+        const s = dest && (kind === 'f' ? (dest.foods || [])[+idx] : (dest.spots || [])[+idx]);
         if (!s) break;
-        items().push({ time: '', name: s.name, desc: s.desc || '', ...(s.tag ? { tag: s.tag } : {}), ...(s.cost ? { cost: s.cost } : {}) });
+        const it = spotItem(s, 0); it.time = '';
+        if (kind === 'f' && !it.tag) it.tag = '美食';
+        items().push(it);
         commit(); renderItems(); flash('#savedItems');
         break;
       }
