@@ -14,14 +14,18 @@
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/okd8888/trip-japan/tree/main/worker)
 
 按下去之後 Cloudflare 會請你登入（沒帳號就註冊，免費），
-它會在你的 GitHub 建一個新 repo，並自動把 Worker 和 D1 資料庫都建好
-（`wrangler.toml` 裡的 `database_id` 佔位字串會被換成真正的 ID）。
+它會在你的 GitHub 建一個新 repo，並自動把 Worker 和 D1 資料庫都建好。
 全程大概兩分鐘，不用開終端機。
+
+設定檔是 `wrangler.jsonc`，裡面**刻意不填 `database_id`**——留空 Cloudflare 才會
+幫你新建一個資料庫並把 ID 填進去。自己補一個假的 ID 上去的話，部署按鈕會回報
+「problem parsing the Wrangler configuration file」。
 
 > ⚠️ **兩個前提，不符合的話按鈕不會動：**
 >
 > 1. 按鈕網址指向 `main` 分支的 `worker/` 資料夾。**功能還沒合併進 `main` 的話會找不到檔案**，
->    先合併，或把網址裡的 `main` 換成你的分支名。
+>    先合併。錯誤訊息會寫「Repository not found. Are you sure it's public?」，很誤導——
+>    跟 repo 公不公開無關，是那個路徑不存在。
 > 2. Cloudflare 這個按鈕在「repo 子資料夾」的情況下有
 >    [已知問題](https://github.com/cloudflare/workers-sdk/issues/14553)，
 >    有時候會建出一個只有兩個檔案、Worker 停在 Hello World 的空專案。
@@ -44,24 +48,23 @@ https://trip-sync.你的帳號.workers.dev
 ```bash
 cd worker
 npm install
-npx wrangler d1 create trip-sync
+npm run deploy
 ```
 
-把印出來的 `database_id` 貼進 `wrangler.toml`，然後：
+wrangler 4 會偵測到 `wrangler.jsonc` 裡的 D1 還不存在，直接問你要不要建，
+按 Enter 讓它建就好，**`database_id` 不用手動填**。
+
+如果它沒問（wrangler 版本太舊），手動建一個再把印出來的 ID 填進 `d1_databases`：
 
 ```bash
-npm run db:init     # 建資料表（方法 A 是自動的，這裡手動跑一次比較踏實）
-npm run deploy
+npx wrangler d1 create trip-sync
 ```
 
 本機開發：
 
 ```bash
-npm run db:init:local
 npm run dev
 ```
-
----
 
 ## 方法 C：完全用網頁介面
 

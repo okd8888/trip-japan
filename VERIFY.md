@@ -40,14 +40,22 @@
 ```bash
 cd worker
 npm install
+npm run deploy
+```
+
+wrangler 4 會偵測到 `wrangler.jsonc` 裡的 D1 還不存在，直接問你要不要建，
+按 Enter 讓它建就好，**`database_id` 不用手動填**。
+
+如果它沒問（wrangler 版本太舊），手動建一個再把印出來的 ID 填進 `d1_databases`：
+
+```bash
 npx wrangler d1 create trip-sync
 ```
 
-把印出來的 `database_id` 貼進 `wrangler.toml`，然後：
+本機開發：
 
 ```bash
-npm run db:init
-npm run deploy
+npm run dev
 ```
 
 ### 方法 C：完全用網頁介面（不想碰終端機的話）
@@ -227,6 +235,8 @@ https://trip-sync.你的帳號.workers.dev/api/rate?from=JPY&to=TWD
 | `/api/health` 打不開 | Worker 沒部署成功 | 看第 1 步，改用方法 B 或 C |
 | `/api/health` 回「Worker 還沒綁定 D1 資料庫」 | D1 綁定名稱不是 `DB` | 到 Worker → Settings → Bindings，把 Variable name 改成 `DB` |
 | Worker 顯示 Hello World | 踩到一鍵部署按鈕的子資料夾問題 | 改用方法 B 或 C |
+| 按鈕說 `Repository not found. Are you sure it's public?` | `main` 上沒有 `worker/`。訊息很誤導，跟公開與否無關 | 先把功能分支合併進 `main` |
+| 按鈕說 `problem parsing the Wrangler configuration file` | 設定檔它讀不懂 | 確認是 `worker/wrangler.jsonc`，且 `d1_databases` 裡**沒有** `database_id` |
 | 按「建立同步行程」說連不上 | 端點網址打錯，或結尾多了斜線以外的東西 | 先用第 2 步確認 `/api/health` 通得了 |
 | 手機打開分享連結是空白行程 | 連結沒帶到 `api` 參數 | 重新用「複製分享連結」按鈕產生，不要手打 |
 | 手機記帳同步不上去 | 手機是唯讀（沒有編輯金鑰） | 看第 7 步 |
