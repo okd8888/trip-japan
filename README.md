@@ -10,6 +10,7 @@ index.html            版面與樣式（單檔）
 app.js                檢視端邏輯，對外開放 window.TripApp
 editor.js             「設定」分頁的表單編輯器
 sync.js               選用的跨裝置同步；沒設定端點就完全不動作
+VERIFY.md             裝好之後照著走一遍，確認每個功能真的在動
 worker/               選用的同步後端（Cloudflare Worker + D1），自己部署到自己的帳號
 data/trip.js          ★ 行程資料（附一份 3 天範例），平常只要改這個檔案
 data/presets.js       目的地預設（幣別、建議景點、打包清單）
@@ -193,6 +194,8 @@ Source 選 **Deploy from a branch**，Branch 選 **main** / **/ (root)**，按 S
 - 別人 fork 這個專案，是連到他自己的 Cloudflare 帳號，兩邊資料互不相干。
 
 **絕對不要**把任何 API 金鑰寫進這個 repo——它是公開的。金鑰只該存在你自己 Worker 的環境變數裡。
+
+裝好之後照 [`VERIFY.md`](VERIFY.md) 走一遍，可以逐項確認同步、分享、匯率端點是不是真的在動。
 
 > ⚠️ 分享連結等同「知道網址就看得到整份行程」。訂房代號、護照號碼、信用卡卡號不要寫進行程備註。
 
