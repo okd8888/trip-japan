@@ -11,7 +11,7 @@ app.js                檢視端邏輯，對外開放 window.TripApp
 editor.js             「設定」分頁的表單編輯器
 sync.js               選用的跨裝置同步；沒設定端點就完全不動作
 worker/               選用的同步後端（Cloudflare Worker + D1），自己部署到自己的帳號
-data/trip.js          ★ 行程資料，平常只要改這個檔案
+data/trip.js          ★ 行程資料（附一份 3 天範例），平常只要改這個檔案
 data/presets.js       目的地預設（幣別、建議景點、打包清單）
 assets/icon.svg       App 圖示
 manifest.webmanifest  「加入主畫面」用
@@ -43,26 +43,29 @@ sw.js                 Service Worker：出國沒網路也能開
 
 **方法 B：直接改 `data/trip.js`**，存檔後 `git push`，網站幾十秒後自動更新。
 
+`data/trip.js` 附的是一份 **3 天的範例行程**，每個選填欄位都至少出現一次，
+可以直接當格式說明看。動手前先把它換成你自己的行程（`id` 也要換，花費紀錄才不會混在一起）。
+
 行程資料的欄位：
 
 ```js
 window.TRIP = {
-  id: "okinawa-2026",          // 換一趟旅程就換 id（花費紀錄會分開存）
+  id: "sample-trip",           // 換一趟旅程就換 id（花費紀錄會分開存）
   destId: "okinawa",           // 對應 data/presets.js，決定建議景點清單
   destName: "沖繩",
-  title: "沖繩 5 日自駕",
+  title: "沖繩 3 日自駕",
   subtitle: "副標題",
-  startDate: "2026-08-31",     // 第一天，之後每天日期自動推算
+  startDate: "2027-04-02",     // 第一天，之後每天日期自動推算
   chart: "assets/chart.png",   // 選填，行程總覽圖
   currency:     { code: "JPY", symbol: "¥",   name: "日圓" },
   homeCurrency: { code: "TWD", symbol: "NT$", name: "台幣" },
   defaultRate: 0.21,           // 抓不到線上匯率時的備援值
-  highlights: ["去程 IT796 · 15:05"],
+  highlights: ["3 天 2 夜"],   // 首頁重點標籤；航班會自動排在最前面，不用重複寫
   categories: ["餐飲", "交通", "購物", "門票", "住宿", "其他"],
   checklist: ["護照", "駕照日文譯本"],
   flights: {                   // 選填，兩段都可留空
-    outbound: { airline:"虎航", no:"IT796", date:"2026-12-07",
-                from:"TPE", depTime:"15:05", to:"OKA", arrTime:"17:50", note:"" },
+    outbound: { airline:"範例航空", no:"XX123", date:"2027-04-02",
+                from:"TPE", depTime:"08:30", to:"OKA", arrTime:"11:15", note:"" },
     inbound:  { }
   },
   days: [{
