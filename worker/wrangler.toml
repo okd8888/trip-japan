@@ -1,0 +1,17 @@
+name = "trip-sync"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# D1 資料庫。binding 一定要叫 DB，Worker 程式碼是用 env.DB 取用的。
+# 用「Deploy to Cloudflare」按鈕部署時，這個資料庫會自動幫你建好；
+# 手動部署請先跑：wrangler d1 create trip-sync
+# 然後把印出來的 database_id 貼到下面。
+[[d1_databases]]
+binding = "DB"
+database_name = "trip-sync"
+database_id = "PLACEHOLDER_RUN_WRANGLER_D1_CREATE"
+
+# 每天 UTC 21:00（台灣時間隔天早上 5 點）把「有人查過的」幣別組合更新一次，
+# 出門前開 App 就是現成的匯率，不用等線上抓取。
+[triggers]
+crons = ["0 21 * * *"]

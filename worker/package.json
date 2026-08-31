@@ -1,0 +1,16 @@
+{
+  "name": "trip-sync",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "旅遊行程手冊的選用同步後端（Cloudflare Worker + D1）",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:init": "wrangler d1 execute trip-sync --remote --file=./schema.sql",
+    "db:init:local": "wrangler d1 execute trip-sync --local --file=./schema.sql"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  }
+}

@@ -9,7 +9,10 @@
 index.html            版面與樣式（單檔）
 app.js                檢視端邏輯，對外開放 window.TripApp
 editor.js             「設定」分頁的表單編輯器
-data/trip.js          ★ 行程資料，平常只要改這個檔案
+sync.js               選用的跨裝置同步；沒設定端點就完全不動作
+VERIFY.md             裝好之後照著走一遍，確認每個功能真的在動
+worker/               選用的同步後端（Cloudflare Worker + D1），自己部署到自己的帳號
+data/trip.js          ★ 行程資料（附一份 3 天範例），平常只要改這個檔案
 data/presets.js       目的地預設（幣別、建議景點、打包清單）
 assets/icon.svg       App 圖示
 manifest.webmanifest  「加入主畫面」用
@@ -41,26 +44,29 @@ sw.js                 Service Worker：出國沒網路也能開
 
 **方法 B：直接改 `data/trip.js`**，存檔後 `git push`，網站幾十秒後自動更新。
 
+`data/trip.js` 附的是一份 **3 天的範例行程**，每個選填欄位都至少出現一次，
+可以直接當格式說明看。動手前先把它換成你自己的行程（`id` 也要換，花費紀錄才不會混在一起）。
+
 行程資料的欄位：
 
 ```js
 window.TRIP = {
-  id: "okinawa-2026",          // 換一趟旅程就換 id（花費紀錄會分開存）
+  id: "sample-trip",           // 換一趟旅程就換 id（花費紀錄會分開存）
   destId: "okinawa",           // 對應 data/presets.js，決定建議景點清單
   destName: "沖繩",
-  title: "沖繩 5 日自駕",
+  title: "沖繩 3 日自駕",
   subtitle: "副標題",
-  startDate: "2026-08-31",     // 第一天，之後每天日期自動推算
+  startDate: "2027-04-02",     // 第一天，之後每天日期自動推算
   chart: "assets/chart.png",   // 選填，行程總覽圖
   currency:     { code: "JPY", symbol: "¥",   name: "日圓" },
   homeCurrency: { code: "TWD", symbol: "NT$", name: "台幣" },
   defaultRate: 0.21,           // 抓不到線上匯率時的備援值
-  highlights: ["去程 IT796 · 15:05"],
+  highlights: ["3 天 2 夜"],   // 首頁重點標籤；航班會自動排在最前面，不用重複寫
   categories: ["餐飲", "交通", "購物", "門票", "住宿", "其他"],
   checklist: ["護照", "駕照日文譯本"],
   flights: {                   // 選填，兩段都可留空
-    outbound: { airline:"虎航", no:"IT796", date:"2026-12-07",
-                from:"TPE", depTime:"15:05", to:"OKA", arrTime:"17:50", note:"" },
+    outbound: { airline:"範例航空", no:"XX123", date:"2027-04-02",
+                from:"TPE", depTime:"08:30", to:"OKA", arrTime:"11:15", note:"" },
     inbound:  { }
   },
   days: [{
@@ -156,10 +162,42 @@ Source 選 **Deploy from a branch**，Branch 選 **main** / **/ (root)**，按 S
 | 花費紀錄 | 瀏覽器 localStorage | 只在你自己的手機上，不會上傳；換裝置或清除瀏覽資料就沒了 |
 | 打包清單勾選 | 瀏覽器 localStorage | 以項目文字記錄，清單改順序也不會勾錯 |
 | 編輯中的行程 | 瀏覽器 localStorage | 只有你看得到；按「下載 trip.js」覆蓋檔案後 push 才會公開 |
-| 匯率 | 線上抓取 + localStorage 快取 | 依序試 currency-api 與 open.er-api.com，失敗就用預設值，也可手動改 |
+| 匯率 | 線上抓取 + localStorage 快取 | 設了同步端點就先問自己的 Worker，再依序試 currency-api 與 open.er-api.com，都失敗才用預設值，也可手動改 |
+| 同步設定 | 瀏覽器 localStorage | 端點、行程碼、編輯金鑰。**不會進 repo**，所以專案本身永遠是乾淨的範本 |
+| 同步的行程與花費 | **你自己的** Cloudflare D1 | 只有開了下面「跨裝置同步」才有；別人 fork 是開他自己的一份 |
 
 > 花費是本機資料，**旅程結束前記得按「匯出 CSV」備份**。
-> 如果需要多人共用花費，就得接後端（Google Apps Script、Supabase 之類），GitHub Pages 本身只能放靜態檔。
+> 想跨裝置或和同行的人共用，見下面的「跨裝置同步」。
+
+## 跨裝置同步（選用）
+
+預設情況下，你的修改只存在自己的瀏覽器，要讓別人看到得下載 `trip.js` 覆蓋檔案再 `git push`。
+如果覺得麻煩，可以花兩分鐘開一個**屬於你自己的**後端，之後行程與花費就會自動同步。
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/okd8888/trip-japan/tree/main/worker)
+
+1. 按上面的按鈕，登入 Cloudflare（免費帳號即可），Worker 與 D1 會自動建好，資料表第一次收到請求時自動生成。細節見 [`worker/README.md`](worker/README.md)。
+2. 拿到網址（`https://trip-sync.你的帳號.workers.dev`）。
+3. 回到網站的「編輯」分頁 → 最下面「跨裝置同步」→ 填端點 → 按「建立同步行程」。
+4. 按「複製分享連結」傳給同行的人，他們打開就是唯讀版本。
+
+**順帶拿到的好處：匯率會變穩。** 同一支 Worker 也提供 `/api/rate`，設好端點後它會被排在
+匯率來源的第 0 順位。出國時擋掉 CDN 的是「你當地的網路」，Cloudflare 邊緣節點去抓不受影響；
+就算上游全掛，也還有昨天的值可回，不會掉到 `trip.js` 裡寫死的 `defaultRate`。
+端點本身掛掉的話前端會自動往下一個來源試，不會更脆弱。
+
+**這個設計刻意讓專案保持成通用範本：**
+
+- repo 裡永遠只有程式碼、範例 `trip.js` 和通用的 `presets.js`，沒有任何人的旅程資料。
+- 同步端點、行程碼、編輯金鑰都存在瀏覽器 localStorage，不會被 commit 進去。
+- 沒填端點的人，網站行為和純靜態版本一模一樣，`sync.js` 全程不做事。
+- 別人 fork 這個專案，是連到他自己的 Cloudflare 帳號，兩邊資料互不相干。
+
+**絕對不要**把任何 API 金鑰寫進這個 repo——它是公開的。金鑰只該存在你自己 Worker 的環境變數裡。
+
+裝好之後照 [`VERIFY.md`](VERIFY.md) 走一遍，可以逐項確認同步、分享、匯率端點是不是真的在動。
+
+> ⚠️ 分享連結等同「知道網址就看得到整份行程」。訂房代號、護照號碼、信用卡卡號不要寫進行程備註。
 
 ## 本機預覽
 
