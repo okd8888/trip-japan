@@ -481,6 +481,11 @@
 
     /* 端點與顯示名稱隨手改就存；行程碼與編輯金鑰要按按鈕才生效，
        否則手滑改一個字就會把花費同步到別本帳。 */
+    if (t.id === 'syncShowKey') {
+      $('#syncKey').type = t.checked ? 'text' : 'password';
+      return;
+    }
+
     if (t.id === 'syncEndpoint' || t.id === 'syncName') {
       if (SY()) { SY().setConfig(t.id === 'syncEndpoint' ? { endpoint: t.value.trim() } : { name: t.value.trim() }); renderSync(); }
       return;
@@ -572,6 +577,7 @@
       case 'syncConnect': syncConnect(); break;
       case 'syncNow':     syncManual();  break;
       case 'syncShare':   syncShare();   break;
+      case 'syncCopyKey': syncCopyKey(); break;
       case 'syncOff':     syncOff();     break;
 
       case 'tripDownload': downloadTripJs(); break;
@@ -702,6 +708,20 @@
       msg('#syncMsg', '分享連結已複製。對方打開就是唯讀版本，不能改你的行程。');
     } catch (_) {
       msg('#syncMsg', '複製失敗，請手動複製：' + url, false);
+    }
+  }
+
+  /* 金鑰欄位是 password 型別，瀏覽器會擋住從裡面複製，所以另外給一顆按鈕。
+     非 HTTPS 或權限被拒時 clipboard 會失敗，退回用 prompt 讓使用者手動選取。 */
+  async function syncCopyKey() {
+    const key = SY().config.editKey;
+    if (!key) return msg('#syncMsg', '目前沒有編輯金鑰（唯讀狀態）。', false);
+    try {
+      await navigator.clipboard.writeText(key);
+      msg('#syncMsg', '編輯金鑰已複製。這把金鑰只存在這台裝置，請另外備份一份。');
+    } catch (_) {
+      window.prompt('複製這串編輯金鑰並另外備份：', key);
+      msg('#syncMsg', '自動複製失敗，已改用彈出視窗顯示。');
     }
   }
 

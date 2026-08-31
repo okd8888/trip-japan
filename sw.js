@@ -1,5 +1,5 @@
 /* 極簡 Service Worker：優先走網路（內容永遠最新），沒網路時用快取（出國離線也能開） */
-const CACHE = 'trip-handbook-v3';
+const CACHE = 'trip-handbook-v4';
 const ASSETS = ['./', './index.html', './sync.js', './app.js', './editor.js', './data/trip.js', './data/presets.js', './manifest.webmanifest', './assets/icon.svg'];
 
 self.addEventListener('install', e => {
