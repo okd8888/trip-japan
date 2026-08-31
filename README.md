@@ -9,6 +9,8 @@
 index.html            版面與樣式（單檔）
 app.js                檢視端邏輯，對外開放 window.TripApp
 editor.js             「設定」分頁的表單編輯器
+sync.js               選用的跨裝置同步；沒設定端點就完全不動作
+worker/               選用的同步後端（Cloudflare Worker + D1），自己部署到自己的帳號
 data/trip.js          ★ 行程資料，平常只要改這個檔案
 data/presets.js       目的地預設（幣別、建議景點、打包清單）
 assets/icon.svg       App 圖示
@@ -157,9 +159,34 @@ Source 選 **Deploy from a branch**，Branch 選 **main** / **/ (root)**，按 S
 | 打包清單勾選 | 瀏覽器 localStorage | 以項目文字記錄，清單改順序也不會勾錯 |
 | 編輯中的行程 | 瀏覽器 localStorage | 只有你看得到；按「下載 trip.js」覆蓋檔案後 push 才會公開 |
 | 匯率 | 線上抓取 + localStorage 快取 | 依序試 currency-api 與 open.er-api.com，失敗就用預設值，也可手動改 |
+| 同步設定 | 瀏覽器 localStorage | 端點、行程碼、編輯金鑰。**不會進 repo**，所以專案本身永遠是乾淨的範本 |
+| 同步的行程與花費 | **你自己的** Cloudflare D1 | 只有開了下面「跨裝置同步」才有；別人 fork 是開他自己的一份 |
 
 > 花費是本機資料，**旅程結束前記得按「匯出 CSV」備份**。
-> 如果需要多人共用花費，就得接後端（Google Apps Script、Supabase 之類），GitHub Pages 本身只能放靜態檔。
+> 想跨裝置或和同行的人共用，見下面的「跨裝置同步」。
+
+## 跨裝置同步（選用）
+
+預設情況下，你的修改只存在自己的瀏覽器，要讓別人看到得下載 `trip.js` 覆蓋檔案再 `git push`。
+如果覺得麻煩，可以花兩分鐘開一個**屬於你自己的**後端，之後行程與花費就會自動同步。
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/okd8888/trip-japan/tree/main/worker)
+
+1. 按上面的按鈕，登入 Cloudflare（免費帳號即可），Worker 與 D1 會自動建好，資料表第一次收到請求時自動生成。細節見 [`worker/README.md`](worker/README.md)。
+2. 拿到網址（`https://trip-sync.你的帳號.workers.dev`）。
+3. 回到網站的「編輯」分頁 → 最下面「跨裝置同步」→ 填端點 → 按「建立同步行程」。
+4. 按「複製分享連結」傳給同行的人，他們打開就是唯讀版本。
+
+**這個設計刻意讓專案保持成通用範本：**
+
+- repo 裡永遠只有程式碼、範例 `trip.js` 和通用的 `presets.js`，沒有任何人的旅程資料。
+- 同步端點、行程碼、編輯金鑰都存在瀏覽器 localStorage，不會被 commit 進去。
+- 沒填端點的人，網站行為和純靜態版本一模一樣，`sync.js` 全程不做事。
+- 別人 fork 這個專案，是連到他自己的 Cloudflare 帳號，兩邊資料互不相干。
+
+**絕對不要**把任何 API 金鑰寫進這個 repo——它是公開的。金鑰只該存在你自己 Worker 的環境變數裡。
+
+> ⚠️ 分享連結等同「知道網址就看得到整份行程」。訂房代號、護照號碼、信用卡卡號不要寫進行程備註。
 
 ## 本機預覽
 

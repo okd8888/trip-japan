@@ -479,6 +479,13 @@
       commit(); flash('#savedCheck'); return;
     }
 
+    /* 端點與顯示名稱隨手改就存；行程碼與編輯金鑰要按按鈕才生效，
+       否則手滑改一個字就會把花費同步到別本帳。 */
+    if (t.id === 'syncEndpoint' || t.id === 'syncName') {
+      if (SY()) { SY().setConfig(t.id === 'syncEndpoint' ? { endpoint: t.value.trim() } : { name: t.value.trim() }); renderSync(); }
+      return;
+    }
+
     if (t.id === 'edDayTitle' || t.id === 'edDayNotes') {
       const day = days()[edDay]; if (!day) return;
       day[t.id === 'edDayTitle' ? 'title' : 'notes'] = t.value.trim();
@@ -561,6 +568,12 @@
         break;
       }
 
+      case 'syncCreate':  syncCreate();  break;
+      case 'syncConnect': syncConnect(); break;
+      case 'syncNow':     syncManual();  break;
+      case 'syncShare':   syncShare();   break;
+      case 'syncOff':     syncOff();     break;
+
       case 'tripDownload': downloadTripJs(); break;
 
       case 'tripExport':
@@ -608,7 +621,98 @@
     e.target.value = '';
   });
 
+  /* ================= 跨裝置同步面板 ================= */
+  const SY = () => window.TripSync;
+
+  function syncFields() {
+    return {
+      endpoint: $('#syncEndpoint').value.trim(),
+      code: $('#syncCode').value.trim(),
+      editKey: $('#syncKey').value.trim(),
+      name: $('#syncName').value.trim()
+    };
+  }
+
+  /* 這四個欄位刻意做成「非受控」：只在開站與明確動作（建立／連結／中斷）後回填。
+     若每次 renderAll 都重寫，使用者先貼好編輯金鑰、再打顯示名稱時，
+     name 的 change 會觸發重繪，把還沒送出的金鑰清成空字串。 */
+  function fillSyncFields() {
+    if (!SY() || !$('#syncEndpoint')) return;
+    const c = SY().config;
+    $('#syncEndpoint').value = c.endpoint || '';
+    $('#syncCode').value = c.code || '';
+    $('#syncKey').value = c.editKey || '';
+    $('#syncName').value = c.name || '';
+  }
+
+  function renderSync() {
+    const badge = $('#syncBadge');
+    if (!SY() || !badge) return;
+    badge.textContent = !SY().enabled() ? '未啟用' : (SY().canEdit() ? '可編輯' : '唯讀');
+  }
+
+  /* app.js 同步完成後 T.trip 會換成遠端版本，這裡把編輯中的草稿跟上 */
+  if (SY()) SY().onStatus(st => {
+    const el = $('#syncMsg');
+    if (el) { el.textContent = st.message || ''; el.style.color = st.state === 'error' || st.state === 'conflict' ? 'var(--hot)' : ''; }
+    if (st.state !== 'ok') return;
+    const inEditor = document.activeElement && document.activeElement.closest && document.activeElement.closest('#view-edit');
+    if (inEditor) return;   // 正在編輯就先不動，下次同步再說
+    if (JSON.stringify(T.trip) !== JSON.stringify(draft)) { draft = clone(T.trip); renderAll(); }
+    renderSync();
+  });
+
+  async function syncCreate() {
+    const f = syncFields();
+    if (!f.endpoint) return msg('#syncMsg', '請先填同步端點（你自己的 Worker 網址）。', false);
+    if (SY().config.code && !confirm('已經連著一個行程碼了，建立新的會換一份。確定嗎？')) return;
+    SY().setConfig({ endpoint: f.endpoint, name: f.name });
+    msg('#syncMsg', '建立中…');
+    try {
+      const out = await SY().createTrip(draft);
+      fillSyncFields(); renderSync();
+      msg('#syncMsg', `建立完成，行程碼 ${out.code}。編輯金鑰只會出現在這台裝置，請按「複製分享連結」分享唯讀版本。`);
+      await T.pullExpenses();
+    } catch (err) { msg('#syncMsg', '建立失敗：' + err.message, false); }
+  }
+
+  async function syncConnect() {
+    const f = syncFields();
+    if (!f.endpoint || !f.code) return msg('#syncMsg', '請填同步端點與行程碼。', false);
+    if (!confirm('會用遠端的行程覆蓋這台裝置目前的內容。確定嗎？')) return;
+    SY().setConfig(f);
+    fillSyncFields(); renderSync();
+    msg('#syncMsg', '連結中…');
+    await T.syncNow();
+    draft = clone(T.trip); renderAll();
+  }
+
+  async function syncManual() {
+    if (!SY().enabled()) return msg('#syncMsg', '還沒設定同步。', false);
+    SY().setConfig(syncFields());
+    await T.syncNow();
+    draft = clone(T.trip); renderAll();
+  }
+
+  async function syncShare() {
+    const url = SY().shareUrl();
+    if (!url) return msg('#syncMsg', '還沒設定同步，沒有分享連結。', false);
+    try {
+      await navigator.clipboard.writeText(url);
+      msg('#syncMsg', '分享連結已複製。對方打開就是唯讀版本，不能改你的行程。');
+    } catch (_) {
+      msg('#syncMsg', '複製失敗，請手動複製：' + url, false);
+    }
+  }
+
+  function syncOff() {
+    if (!confirm('中斷後這台裝置就不再同步，本機的行程與花費會留著。確定嗎？')) return;
+    SY().disconnect(); fillSyncFields(); renderSync();
+    msg('#syncMsg', '已中斷同步，回到純本機模式。');
+  }
+
   /* ================= 啟動 ================= */
-  function renderAll() { renderBasic(); renderFlights(); renderStay(); renderItems(); renderChecklist(); renderJson(); }
+  function renderAll() { renderBasic(); renderFlights(); renderStay(); renderItems(); renderChecklist(); renderJson(); renderSync(); }
   renderAll();
+  fillSyncFields();
 })();

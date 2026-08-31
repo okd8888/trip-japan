@@ -319,8 +319,27 @@
   }
 
   /* ---------------- 花費 ---------------- */
+  /* expenses 裡會混著已刪除的「墓碑」（deleted:true）。留著是為了跨裝置同步：
+     直接把列拿掉的話，另一台裝置下次同步就會把它當成新資料再塞回來。
+     所有畫面與統計都走 live()，看不到墓碑。 */
   let expenses = [];
-  const loadExpenses = () => { try { expenses = JSON.parse(localStorage.getItem(KEY.exp()) || '[]'); } catch (_) { expenses = []; } };
+  const live = () => expenses.filter(x => !x.deleted);
+
+  /* 舊資料的 id 是 Date.now()，兩台裝置同一毫秒記帳就會撞號，改成加隨機尾碼 */
+  const newExpId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const normalizeExp = x => ({
+    ...x,
+    id: String(x.id ?? newExpId()),
+    updatedAt: Number(x.updatedAt) || Number(x.id) || Date.now(),
+    deleted: !!x.deleted
+  });
+
+  const loadExpenses = () => {
+    try {
+      const v = JSON.parse(localStorage.getItem(KEY.exp()) || '[]');
+      expenses = Array.isArray(v) ? v.map(normalizeExp) : [];
+    } catch (_) { expenses = []; }
+  };
   const saveExpenses = () => localStorage.setItem(KEY.exp(), JSON.stringify(expenses));
   loadExpenses();
 
@@ -344,28 +363,29 @@
 
   function renderExpenses() {
     const r = +($('#fxRate')?.value) || rate;
-    const total = expenses.reduce((s, x) => s + x.amount, 0);
-    const totalHome = expenses.reduce((s, x) => s + (x.amount * (x.rate || r)), 0);
+    const rows = live();
+    const total = rows.reduce((s, x) => s + x.amount, 0);
+    const totalHome = rows.reduce((s, x) => s + (x.amount * (x.rate || r)), 0);
 
     $('#expTotal').innerHTML = `${money(total, CUR())}<small>約 ${money(totalHome, HOME())}</small>`;
     $('#todaySpend').textContent = money(total, CUR());
-    $('#todaySpendSub').textContent = `約 ${money(totalHome, HOME())}・共 ${expenses.length} 筆`;
+    $('#todaySpendSub').textContent = `約 ${money(totalHome, HOME())}・共 ${rows.length} 筆`;
 
-    $('#expList').innerHTML = expenses.length ? expenses.map((x, i) => ({ x, i })).reverse().map(({ x, i }) =>
+    $('#expList').innerHTML = rows.length ? [...rows].reverse().map(x =>
       `<div class="exp">
-        <span class="meta"><b>${esc(x.category)}</b> ${esc(x.note || '')}<em>Day ${x.day + 1}・${esc(x.date || '')}</em></span>
+        <span class="meta"><b>${esc(x.category)}</b> ${esc(x.note || '')}<em>Day ${x.day + 1}・${esc(x.date || '')}${x.by ? '・' + esc(x.by) : ''}</em></span>
         <span class="amt">${money(x.amount, CUR())}<small>約 ${money(x.amount * (x.rate || r), HOME())}</small></span>
-        <button data-del="${i}" title="刪除">刪除</button>
+        <button data-del="${esc(x.id)}" title="刪除">刪除</button>
       </div>`).join('') : '<p class="empty">還沒有紀錄，從第一筆旅費開始。</p>';
 
     const byCat = {}, byDay = {};
-    expenses.forEach(x => {
+    rows.forEach(x => {
       byCat[x.category] = (byCat[x.category] || 0) + x.amount;
       byDay[x.day] = (byDay[x.day] || 0) + x.amount;
     });
     bars($('#expBars'), Object.entries(byCat).sort((a, b) => b[1] - a[1]), total);
     bars($('#expDayBars'), Object.entries(byDay).sort((a, b) => a[0] - b[0]).map(([d, v]) => [`Day ${+d + 1}`, v]), total);
-    $('#expBarsEmpty').hidden = expenses.length > 0;
+    $('#expBarsEmpty').hidden = rows.length > 0;
   }
 
   function bindExpenses() {
@@ -374,34 +394,114 @@
       const amount = +$('#expAmount').value;
       if (!(amount > 0)) return;
       expenses.push({
-        id: Date.now(), date: new Date().toLocaleDateString('zh-TW'),
+        id: newExpId(), date: new Date().toLocaleDateString('zh-TW'),
         day: +$('#expDay').value || 0, category: $('#expCategory').value,
-        amount, note: $('#expNote').value.trim(), rate: +$('#fxRate').value || rate
+        amount, note: $('#expNote').value.trim(), rate: +$('#fxRate').value || rate,
+        by: syncName(), updatedAt: Date.now(), deleted: false
       });
       saveExpenses();
       $('#expAmount').value = ''; $('#expNote').value = '';
-      renderExpenses();
+      renderExpenses(); pushExpenses();
     });
 
     $('#expList').addEventListener('click', e => {
       const b = e.target.closest('[data-del]');
       if (!b || !confirm('確定刪除這筆花費？')) return;
-      expenses.splice(+b.dataset.del, 1); saveExpenses(); renderExpenses();
+      const row = expenses.find(x => String(x.id) === b.dataset.del);
+      if (!row) return;
+      row.deleted = true; row.updatedAt = Date.now();
+      saveExpenses(); renderExpenses(); pushExpenses();
     });
 
     $('#expExport').addEventListener('click', () => {
-      if (!expenses.length) return alert('目前沒有花費紀錄。');
-      const head = ['日期', '第幾天', '分類', `金額(${CUR().code})`, `約(${HOME().code})`, '匯率', '備註'];
-      const rows = expenses.map(x => [x.date, `Day ${x.day + 1}`, x.category, x.amount,
-        Math.round(x.amount * (x.rate || rate)), x.rate || rate, x.note || '']);
-      const csv = [head, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+      const rows = live();
+      if (!rows.length) return alert('目前沒有花費紀錄。');
+      const head = ['日期', '第幾天', '分類', `金額(${CUR().code})`, `約(${HOME().code})`, '匯率', '記錄者', '備註'];
+      const body = rows.map(x => [x.date, `Day ${x.day + 1}`, x.category, x.amount,
+        Math.round(x.amount * (x.rate || rate)), x.rate || rate, x.by || '', x.note || '']);
+      const csv = [head, ...body].map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n');
       download(`${trip.id || 'trip'}-花費.csv`, '﻿' + csv, 'text/csv;charset=utf-8');
     });
 
     $('#expClear').addEventListener('click', () => {
-      if (!expenses.length || !confirm('會刪掉全部花費紀錄，且無法復原。確定嗎？')) return;
-      expenses = []; saveExpenses(); renderExpenses();
+      if (!live().length || !confirm('會刪掉全部花費紀錄，且無法復原。確定嗎？')) return;
+      const t = Date.now();
+      expenses.forEach(x => { x.deleted = true; x.updatedAt = t; });
+      saveExpenses(); renderExpenses(); pushExpenses();
     });
+  }
+
+  /* ---------------- 跨裝置同步（選用） ----------------
+     沒設定端點時 syncOn() 一律 false，底下每個函式都直接 return，
+     網站行為和純靜態版本完全一樣。 */
+  const S = () => window.TripSync;
+  const syncOn = () => !!(S() && S().enabled());
+  const syncName = () => (S() ? S().config.name || '' : '');
+  const syncStatus = (state, msg) => { if (S()) S().setStatus(state, msg); };
+
+  let applyingRemote = false;   // 套用遠端資料時不能再推回去，否則兩台裝置會無限互推
+  let expTimer = 0, tripTimer = 0;
+
+  function applyRemoteTrip(next) {
+    if (!next || !next.days) return;
+    applyingRemote = true;
+    try { window.TripApp.setTrip(next); } finally { applyingRemote = false; }
+  }
+
+  async function pullExpenses() {
+    if (!syncOn()) return;
+    expenses = (await S().syncExpenses(expenses)).map(normalizeExp);
+    saveExpenses();
+    renderExpenses();
+  }
+
+  /* 記一筆帳就同步一次，但連按時要合併成一次請求 */
+  function pushExpenses() {
+    if (!syncOn()) return;
+    clearTimeout(expTimer);
+    expTimer = setTimeout(() => {
+      pullExpenses()
+        .then(() => syncStatus('ok', `花費已同步（${new Date().toLocaleTimeString('zh-TW')}）`))
+        .catch(err => syncStatus('error', '花費同步失敗：' + err.message));
+    }, 800);
+  }
+
+  /* 編輯器每改一個欄位就會 commit 一次，所以行程要壓得比花費更久才送 */
+  function pushTrip() {
+    if (!syncOn() || !S().canEdit() || applyingRemote) return;
+    clearTimeout(tripTimer);
+    tripTimer = setTimeout(async () => {
+      try {
+        const out = await S().pushTrip(trip);
+        syncStatus('ok', `行程已同步 v${out.version}（${new Date().toLocaleTimeString('zh-TW')}）`);
+      } catch (err) {
+        if (err.status === 409 && err.remote) {
+          syncStatus('conflict', '這份行程已被其他裝置更新');
+          if (confirm('這份行程已被其他裝置更新。\n\n確定＝載入對方的版本（你剛才的修改會不見）\n取消＝保留你的版本，蓋過對方')) {
+            applyRemoteTrip(err.remote.trip);
+            syncStatus('ok', '已載入其他裝置的版本');
+          } else {
+            pushTrip();   // sync.js 已把 version 更新成伺服器現況，重送就會成功
+          }
+        } else {
+          syncStatus('error', '行程同步失敗：' + err.message);
+        }
+      }
+    }, 2500);
+  }
+
+  /** 手動或開站時的完整同步：先拉行程，再對帳。行程沒拉到就不動花費，避免帳本錯本。 */
+  async function syncNow() {
+    if (!syncOn()) return;
+    syncStatus('syncing', '同步中…');
+    try {
+      const out = await S().pullTrip();
+      if (out && out.trip) applyRemoteTrip(out.trip);
+      await pullExpenses();
+      syncStatus('ok', `已同步（${new Date().toLocaleTimeString('zh-TW')}）`);
+    } catch (err) {
+      syncStatus('error', err.status === 404 ? '找不到這個行程碼' : '同步失敗：' + err.message);
+    }
   }
 
   /* ---------------- 分頁切換 ---------------- */
@@ -432,9 +532,12 @@
       trip = next;
       if (persist) { localStorage.setItem(OVERRIDE_KEY, JSON.stringify(next)); usingOverride = true; }
       renderAll();
+      if (persist) pushTrip();
     },
     clearOverride() { localStorage.removeItem(OVERRIDE_KEY); trip = fileTrip; usingOverride = false; renderAll(); },
     renderAll, showView, download, esc, fmtDate, parseDate, iso, addDays, dayCount, driveInfo,
+    syncNow, pullExpenses, applyRemoteTrip,
+    get expenses() { return expenses; },
     get selectedDay() { return selectedDay; },
     set selectedDay(v) { selectedDay = v; renderPlan(); }
   };
@@ -453,6 +556,13 @@
 
   showView(location.hash.slice(1) || 'today', false);
   fetchRate();
+
+  /* 分享連結 ?trip=CODE&api=... 會在這裡被吃掉並寫進設定，網址列隨即清乾淨 */
+  if (S()) {
+    const adopted = S().adoptFromUrl();
+    if (syncOn()) syncNow();
+    else if (adopted) syncStatus('error', '這個分享連結沒有帶同步端點，請到「設定」分頁補上。');
+  }
 
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     navigator.serviceWorker.register('sw.js').catch(() => {});

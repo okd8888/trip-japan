@@ -410,6 +410,36 @@ details.adv[open] summary{margin-bottom:12px}
       </details>
       <p class="note" id="tripMsg" style="margin-top:10px"></p>
     </div>
+
+    <div class="panel">
+      <div class="section-head"><div><p>選配</p><h2>跨裝置同步</h2></div><span class="pill" id="syncBadge">未啟用</span></div>
+      <p class="note">
+        接上你自己的 Cloudflare Worker 之後，行程與花費就會在手機、電腦、同行的人之間同步，
+        不用再下載 <code>trip.js</code> 重新發布。留白＝維持現在的純本機模式。
+        後端怎麼開只要五分鐘，見 <code>worker/README.md</code>。
+      </p>
+
+      <label class="field"><span>同步端點（你自己的 Worker 網址）</span>
+        <input id="syncEndpoint" placeholder="https://trip-sync.你的帳號.workers.dev" spellcheck="false"></label>
+      <div class="row">
+        <label class="field"><span>行程碼</span><input id="syncCode" placeholder="建立後自動填入" spellcheck="false"></label>
+        <label class="field"><span>你的顯示名稱</span><input id="syncName" placeholder="例如：阿德"></label>
+      </div>
+      <label class="field"><span>編輯金鑰（有才能改，沒有就是唯讀）</span>
+        <input id="syncKey" type="password" placeholder="建立後自動填入" spellcheck="false"></label>
+
+      <div class="btn-row" style="margin-top:12px">
+        <button class="btn" id="syncCreate">建立同步行程</button>
+        <button class="btn sub" id="syncConnect">連結現有行程</button>
+        <button class="btn sub" id="syncNow">立刻同步</button>
+        <button class="btn sub" id="syncShare">複製分享連結</button>
+        <button class="btn danger" id="syncOff">中斷同步</button>
+      </div>
+      <p class="note" id="syncMsg" style="margin-top:10px"></p>
+      <p class="note" style="margin-top:6px">
+        ⚠️ 拿到分享連結的人就看得到整份行程（唯讀）。訂房代號、護照號碼、信用卡卡號不要寫進行程備註。
+      </p>
+    </div>
   </section>
 
   <nav class="tabbar">
@@ -423,6 +453,7 @@ details.adv[open] summary{margin-bottom:12px}
 
 <script src="data/presets.js"></script>
 <script src="data/trip.js"></script>
+<script src="sync.js"></script>
 <script src="app.js"></script>
 <script src="editor.js"></script>
 </body>
