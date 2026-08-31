@@ -9,41 +9,27 @@
 
 ---
 
-## 方法 A：一鍵部署（最快，但有前提，見下方）
+## 方法 A：完全用網頁介面（推薦）
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/okd8888/trip-japan/tree/main/worker)
+不用終端機、不用裝任何東西，全程在 Cloudflare 後台點一點，十分鐘完成。
 
-按下去之後 Cloudflare 會請你登入（沒帳號就註冊，免費），
-它會在你的 GitHub 建一個新 repo，並自動把 Worker 和 D1 資料庫都建好。
-全程大概兩分鐘，不用開終端機。
+1. 後台 → **Workers & Pages** → **Create** → **Start from Hello World** → 命名 `trip-sync` → **Deploy**
+2. 進 Worker 的 **Edit code**，把編輯器內容全選刪掉，換成 [`src/index.js`](src/index.js)
+   的**全部內容**（352 行，最後一行是 `};`，貼完檢查有沒有貼完整）→ **Deploy**
+3. 後台 → **Storage & Databases** → **D1 SQL Database** → **Create** → 命名 `trip-sync`
+4. 回到 Worker → **Settings** → **Bindings** → **Add** → **D1 database**
+   → Variable name 填 **`DB`**（一定要叫這個，程式碼是用 `env.DB` 取用的），
+   選剛才建的資料庫 → **Deploy**
 
-設定檔是 `wrangler.jsonc`，裡面**刻意不填 `database_id`**——留空 Cloudflare 才會
-幫你新建一個資料庫並把 ID 填進去。自己補一個假的 ID 上去的話，部署按鈕會回報
-「problem parsing the Wrangler configuration file」。
+資料表不用手動建，Worker 第一次收到請求時會自己建好。
 
-> ⚠️ **兩個前提，不符合的話按鈕不會動：**
->
-> 1. 按鈕網址指向 `main` 分支的 `worker/` 資料夾。**功能還沒合併進 `main` 的話會找不到檔案**，
->    先合併。錯誤訊息會寫「Repository not found. Are you sure it's public?」，很誤導——
->    跟 repo 公不公開無關，是那個路徑不存在。
-> 2. Cloudflare 這個按鈕在「repo 子資料夾」的情況下有
->    [已知問題](https://github.com/cloudflare/workers-sdk/issues/14553)，
->    有時候會建出一個只有兩個檔案、Worker 停在 Hello World 的空專案。
->    部署完發現 `/api/health` 沒反應、或 Worker 內容是 Hello World，就是踩到這個雷，
->    改用下面的方法 B 或 C。
-
-完成後你會拿到一個網址，長得像：
-
-```
-https://trip-sync.你的帳號.workers.dev
-```
-
-**資料表會在第一次收到請求時自動建立**，你不用做任何事。
-想確認有沒有活著，直接開這個網址加上 `/api/health`，看到 `{"ok":true}` 就成了。
+> 這條路徑少了「每天自動更新匯率」的排程。要的話到 Worker →
+> **Settings** → **Trigger Events** → 加一個 Cron Trigger `0 21 * * *`。
+> 不加也沒差，匯率照樣會在你查的時候即時抓，只是少了預先暖好的那一層。
 
 ---
 
-## 方法 B：用指令部署（最可靠）
+## 方法 B：用指令部署（有 Node 的話最快）
 
 ```bash
 cd worker
@@ -51,7 +37,7 @@ npm install
 npm run deploy
 ```
 
-wrangler 4 會偵測到 `wrangler.jsonc` 裡的 D1 還不存在，直接問你要不要建，
+wrangler 4 會偵測到 `wrangler.json` 裡的 D1 還不存在，直接問你要不要建，
 按 Enter 讓它建就好，**`database_id` 不用手動填**。
 
 如果它沒問（wrangler 版本太舊），手動建一個再把印出來的 ID 填進 `d1_databases`：
@@ -66,18 +52,28 @@ npx wrangler d1 create trip-sync
 npm run dev
 ```
 
-## 方法 C：完全用網頁介面
+---
 
-不想碰終端機、按鈕又壞掉的話走這條，一樣不用裝任何東西：
+## 方法 C：一鍵部署按鈕（實測在這個 repo 佈局下失敗）
 
-1. Cloudflare 後台 → **Workers & Pages** → **Create** → **Start from Hello World** → 命名 `trip-sync`
-2. 進 Worker 的 **Edit code**，把 `src/index.js` 全部內容貼上去 → **Deploy**
-3. 後台 → **Storage & Databases** → **D1** → **Create database**，命名 `trip-sync`
-4. 回到 Worker → **Settings** → **Bindings** → **Add** → **D1 database**
-   → Variable name 填 **`DB`**（一定要叫這個，程式碼是用 `env.DB` 取用的），
-   選剛才建的資料庫 → **Deploy**
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/okd8888/trip-japan/tree/main/worker)
 
-資料表不用手動建，Worker 第一次收到請求時會自己建好。
+> ⚠️ **實測結果：這顆按鈕在本專案的佈局下跑不起來，請直接用方法 B 或 C。**
+>
+> Worker 放在 repo 的 `worker/` 子資料夾裡，而 Cloudflare 的部署按鈕
+> [對子資料夾的支援還不完整](https://github.com/cloudflare/workers-sdk/issues/14553)
+> （對話框自己也掛著 "Monorepos are not yet fully supported" 的警告）。
+> 實際會遇到的兩個錯誤：
+>
+> - **`Repository not found. Are you sure it's public?`**
+>   跟公開與否無關。代表那個路徑不存在——通常是功能還沒合併進 `main`。
+> - **`There was a problem parsing the Wrangler configuration file`**
+>   設定檔本身沒問題（`wrangler.json` 是嚴格合法的 JSON，`wrangler deploy --dry-run`
+>   也完全通過），是按鈕的 parser 沒讀到子資料夾裡的設定檔。
+>   換 TOML／JSONC／JSON、拿掉 `database_id`、註解改英文都試過，都一樣。
+>
+> 想讓按鈕能用的話，唯一可靠的辦法是把 `worker/` 拆成一個獨立的 repo，
+> 讓設定檔位在根目錄。但為了一顆按鈕拆專案不划算，方法 C 十分鐘就做完了。
 
 ---
 

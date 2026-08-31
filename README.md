@@ -174,9 +174,9 @@ Source 選 **Deploy from a branch**，Branch 選 **main** / **/ (root)**，按 S
 預設情況下，你的修改只存在自己的瀏覽器，要讓別人看到得下載 `trip.js` 覆蓋檔案再 `git push`。
 如果覺得麻煩，可以花兩分鐘開一個**屬於你自己的**後端，之後行程與花費就會自動同步。
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/okd8888/trip-japan/tree/main/worker)
-
-1. 按上面的按鈕，登入 Cloudflare（免費帳號即可），Worker 與 D1 會自動建好，資料表第一次收到請求時自動生成。細節見 [`worker/README.md`](worker/README.md)。
+1. 在 Cloudflare 後台建一個 Worker、貼上 `worker/src/index.js`、建一個 D1 並把綁定命名為 `DB`。
+   十分鐘、不用終端機，完整步驟見 [`worker/README.md`](worker/README.md)。
+   （有 Node 的話 `cd worker && npm install && npm run deploy` 更快。）
 2. 拿到網址（`https://trip-sync.你的帳號.workers.dev`）。
 3. 回到網站的「編輯」分頁 → 最下面「跨裝置同步」→ 填端點 → 按「建立同步行程」。
 4. 按「複製分享連結」傳給同行的人，他們打開就是唯讀版本。

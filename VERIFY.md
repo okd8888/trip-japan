@@ -22,53 +22,21 @@
 
 ## 第 1 步：部署後端
 
-三條路，選一條就好。**先試方法 A，失敗就換 B。**
+完整步驟在 [`worker/README.md`](worker/README.md)，那裡有三條路：
 
-### 方法 A：一鍵部署按鈕
+| | 需要什麼 | 大概多久 |
+|---|---|---|
+| **方法 A：純網頁介面**（推薦） | 只要瀏覽器 | 10 分鐘 |
+| **方法 B：`npm run deploy`** | 要有 Node | 3 分鐘 |
+| 方法 C：一鍵部署按鈕 | — | **實測跑不起來，別試** |
 
-打開 repo 裡的 `worker/README.md`，按 **Deploy to Cloudflare**。
-登入 Cloudflare（免費帳號即可）後，它會在你的 GitHub 建一個新 repo，
-並自動建好 Worker 與 D1 資料庫。
+> ⚠️ **一鍵部署按鈕在這個專案跑不起來。** Worker 放在 repo 的 `worker/` 子資料夾，
+> 而 Cloudflare 的部署按鈕對子資料夾的支援還不完整，會卡在
+> `There was a problem parsing the Wrangler configuration file`。
+> 設定檔本身沒問題——`wrangler deploy --dry-run` 完全通過，
+> TOML／JSONC／JSON 三種格式都試過，一樣。用方法 A 或 B。
 
-> ⚠️ Cloudflare 這個按鈕在「repo 子資料夾」的情況下有已知問題，
-> 有時候會建出一個只有兩個檔案、Worker 停在 Hello World 的空專案。
-> 如果部署完打開 `/api/health` 沒反應，或 Worker 內容是 Hello World，
-> 就是踩到這個雷了，改用方法 B 或 C。
-
-### 方法 B：用指令部署（最可靠）
-
-```bash
-cd worker
-npm install
-npm run deploy
-```
-
-wrangler 4 會偵測到 `wrangler.jsonc` 裡的 D1 還不存在，直接問你要不要建，
-按 Enter 讓它建就好，**`database_id` 不用手動填**。
-
-如果它沒問（wrangler 版本太舊），手動建一個再把印出來的 ID 填進 `d1_databases`：
-
-```bash
-npx wrangler d1 create trip-sync
-```
-
-本機開發：
-
-```bash
-npm run dev
-```
-
-### 方法 C：完全用網頁介面（不想碰終端機的話）
-
-1. Cloudflare 後台 → **Workers & Pages** → **Create** → **Start from Hello World** → 命名 `trip-sync`
-2. 進 Worker 的 **Edit code**，把 `worker/src/index.js` 全部內容貼上去，Deploy
-3. 後台 → **Storage & Databases** → **D1** → **Create database**，命名 `trip-sync`
-4. 回到 Worker → **Settings** → **Bindings** → **Add** → **D1 database**
-   → Variable name 填 **`DB`**（一定要叫這個），選剛才建的資料庫 → Deploy
-
-> 資料表不用手動建，Worker 第一次收到請求時會自己建好。
-
-部署完你會拿到一個網址，像 `https://trip-sync.你的帳號.workers.dev`。
+不管走哪一條，最後都會拿到一個網址，像 `https://trip-sync.你的帳號.workers.dev`。
 **把它記下來，後面每一步都要用。**
 
 ---
@@ -236,7 +204,7 @@ https://trip-sync.你的帳號.workers.dev/api/rate?from=JPY&to=TWD
 | `/api/health` 回「Worker 還沒綁定 D1 資料庫」 | D1 綁定名稱不是 `DB` | 到 Worker → Settings → Bindings，把 Variable name 改成 `DB` |
 | Worker 顯示 Hello World | 踩到一鍵部署按鈕的子資料夾問題 | 改用方法 B 或 C |
 | 按鈕說 `Repository not found. Are you sure it's public?` | `main` 上沒有 `worker/`。訊息很誤導，跟公開與否無關 | 先把功能分支合併進 `main` |
-| 按鈕說 `problem parsing the Wrangler configuration file` | 設定檔它讀不懂 | 確認是 `worker/wrangler.jsonc`，且 `d1_databases` 裡**沒有** `database_id` |
+| 按鈕說 `problem parsing the Wrangler configuration file` | 設定檔它讀不懂 | 確認是 `worker/wrangler.json`，且 `d1_databases` 裡**沒有** `database_id` |
 | 按「建立同步行程」說連不上 | 端點網址打錯，或結尾多了斜線以外的東西 | 先用第 2 步確認 `/api/health` 通得了 |
 | 手機打開分享連結是空白行程 | 連結沒帶到 `api` 參數 | 重新用「複製分享連結」按鈕產生，不要手打 |
 | 手機記帳同步不上去 | 手機是唯讀（沒有編輯金鑰） | 看第 7 步 |
