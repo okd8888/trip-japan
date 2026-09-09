@@ -8,6 +8,8 @@
 
   const CONFIG_KEY = 'tripSync';
   const CURSOR_KEY = code => `tripSyncCursor:${code}`;
+  const query = new URLSearchParams(location.search);
+  const isShared = query.has('trip');
 
   let config = { endpoint: '', code: '', editKey: '', name: '' };
   try {
@@ -26,6 +28,7 @@
   const base = () => String(config.endpoint || '').replace(/\/+$/, '');
   const enabled = () => !!(base() && config.code);
   const canEdit = () => !!(enabled() && config.editKey);
+  const readOnly = () => isShared || (enabled() && !canEdit());
 
   async function api(path, { method = 'GET', body, auth = false } = {}) {
     if (!base()) throw new Error('還沒設定同步端點');
@@ -36,7 +39,7 @@
       headers['x-edit-key'] = config.editKey;
     }
     const res = await fetch(base() + path, {
-      method, headers, cache: 'no-store',
+      method, headers, cache: 'no-store', signal: AbortSignal.timeout(15000),
       body: body === undefined ? undefined : JSON.stringify(body)
     });
     let data = null;
@@ -51,19 +54,21 @@
 
   /* ---------------- 行程 ---------------- */
 
-  let version = 0;   // 上次看到的伺服器版本，寫入時用來偵測衝突
+  const versionKey = () => `tripSyncVersion:${base()}:${config.code}`;
+  let version = Number(localStorage.getItem(versionKey())) || 0;
+  const saveVersion = value => { version = value; localStorage.setItem(versionKey(), String(value)); };
 
   async function createTrip(trip) {
-    const out = await api('/api/trip', { method: 'POST', body: { trip, by: config.name } });
+    const out = await api('/api/trip', { method: 'POST', body: { trip: window.TripCore.publicTrip(trip), by: config.name } });
     setConfig({ code: out.code, editKey: out.editKey });
-    version = out.version;
+    saveVersion(out.version);
     localStorage.setItem(CURSOR_KEY(out.code), '0');
     return out;
   }
 
   async function pullTrip() {
     const out = await api('/api/trip/' + encodeURIComponent(config.code));
-    version = out.version;
+    saveVersion(out.version);
     return out;
   }
 
@@ -71,13 +76,12 @@
   async function pushTrip(trip) {
     try {
       const out = await api('/api/trip/' + encodeURIComponent(config.code), {
-        method: 'PUT', auth: true, body: { trip, version, by: config.name }
+        method: 'PUT', auth: true, body: { trip: window.TripCore.publicTrip(trip), version, by: config.name }
       });
-      version = out.version;
+      saveVersion(out.version);
       return out;
     } catch (err) {
       if (err.status === 409 && err.data) {
-        version = err.data.version;
         err.remote = err.data;
       }
       throw err;
@@ -129,8 +133,11 @@
   /* ---------------- 設定 ---------------- */
 
   function setConfig(patch) {
+    const previous = versionKey();
     config = { ...config, ...patch };
-    localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+    if (isShared) config.editKey = '';
+    else localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+    if (previous !== versionKey()) version = Number(localStorage.getItem(versionKey())) || 0;
     return config;
   }
 
@@ -151,28 +158,28 @@
     return u.toString();
   }
 
-  /** 讀網址上的分享參數；有的話寫進設定（唯讀，不覆蓋既有的編輯金鑰） */
+  /** 分享設定只套用目前頁面，保留原有裝置的編輯金鑰與設定。 */
   function adoptFromUrl() {
     const q = new URLSearchParams(location.search);
     const code = q.get('trip'), endpoint = q.get('api');
     if (!code) return false;
 
-    const sameTrip = config.code === code;
+    if (!window.TripCore.safeUrl(endpoint) || !endpoint.startsWith('https://')) return false;
     setConfig({
       code,
-      endpoint: endpoint || config.endpoint,
-      editKey: sameTrip ? config.editKey : ''   // 換一份行程就不該沿用舊金鑰
+      endpoint,
+      editKey: ''
     });
-    /* 網址列留著參數會讓分享連結被一直複製傳下去，讀完就清掉 */
-    history.replaceState(null, '', location.pathname + location.hash);
     return true;
   }
+
+  if (isShared) { config = {endpoint:'',code:'',editKey:'',name:''}; adoptFromUrl(); }
 
   window.TripSync = {
     get config() { return { ...config }; },
     get version() { return version; },
     get status() { return { ...status }; },
-    base, enabled, canEdit, setConfig, disconnect, setStatus,
+    base, enabled, canEdit, readOnly, isShared, setConfig, disconnect, setStatus,
     createTrip, pullTrip, pushTrip, syncExpenses, mergeExpenses,
     shareUrl, adoptFromUrl,
     onStatus(fn) { listeners.add(fn); return () => listeners.delete(fn); }

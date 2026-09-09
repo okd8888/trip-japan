@@ -98,9 +98,12 @@ async function canWrite(request, row) {
   return timingSafeEqual(await sha256(key), row.edit_key_hash);
 }
 
+const cleanTrip = trip => JSON.parse(JSON.stringify(trip, (key, value) => ['reservationNo', 'editKey', 'syncKey'].includes(key) ? undefined : value));
+const validTrip = trip => trip && Array.isArray(trip.days) && trip.days.every(d => d && typeof d === 'object' && (!d.items || (Array.isArray(d.items) && d.items.every(it => it && typeof it === 'object'))));
+
 const publicTrip = row => ({
   code: row.code,
-  trip: JSON.parse(row.trip),
+  trip: cleanTrip(JSON.parse(row.trip)),
   version: row.version,
   updatedBy: row.updated_by || '',
   updatedAt: row.updated_at
@@ -111,7 +114,7 @@ const publicTrip = row => ({
 /* POST /api/trip — 開一個新的同步行程，回傳 code + editKey（editKey 只在這時候出現一次） */
 async function createTrip(request, env) {
   const body = await readBody(request);
-  if (!body.trip || typeof body.trip !== 'object') return fail(400, '缺少 trip');
+  if (!validTrip(body.trip)) return fail(400, '缺少有效的 trip.days');
 
   const code = randomId(10);
   const editKey = randomId(32);
@@ -120,7 +123,7 @@ async function createTrip(request, env) {
   await env.DB.prepare(
     `INSERT INTO trips (code, edit_key_hash, trip, version, updated_by, updated_at, created_at)
      VALUES (?, ?, ?, 1, ?, ?, ?)`
-  ).bind(code, await sha256(editKey), JSON.stringify(body.trip), String(body.by || ''), t, t).run();
+  ).bind(code, await sha256(editKey), JSON.stringify(cleanTrip(body.trip)), String(body.by || ''), t, t).run();
 
   return json({ code, editKey, version: 1, updatedAt: t }, 201);
 }
@@ -139,16 +142,18 @@ async function putTrip(request, env, code) {
   if (!await canWrite(request, row)) return fail(403, '編輯金鑰不正確，目前是唯讀狀態');
 
   const body = await readBody(request);
-  if (!body.trip || typeof body.trip !== 'object') return fail(400, '缺少 trip');
+  if (!validTrip(body.trip)) return fail(400, '缺少有效的 trip.days');
+  if (!Number.isInteger(body.version)) return fail(400, '缺少有效的 version');
 
   if (Number.isFinite(body.version) && body.version !== row.version) {
     return json({ error: '這份行程已被其他裝置更新', conflict: true, ...publicTrip(row) }, 409);
   }
 
   const t = now(), version = row.version + 1;
-  await env.DB.prepare(
-    'UPDATE trips SET trip = ?, version = ?, updated_by = ?, updated_at = ? WHERE code = ?'
-  ).bind(JSON.stringify(body.trip), version, String(body.by || ''), t, code).run();
+  const result = await env.DB.prepare(
+    'UPDATE trips SET trip = ?, version = ?, updated_by = ?, updated_at = ? WHERE code = ? AND version = ?'
+  ).bind(JSON.stringify(cleanTrip(body.trip)), version, String(body.by || ''), t, code, row.version).run();
+  if (!result.meta.changes) return json({error:'這份行程已被其他裝置更新',conflict:true,...publicTrip(await loadTrip(env, code))},409);
 
   return json({ code, version, updatedAt: t, updatedBy: String(body.by || '') });
 }

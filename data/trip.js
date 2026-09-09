@@ -17,6 +17,7 @@ window.TRIP = {
   eyebrow: "SAMPLE ITINERARY",            // 大標上方的小字
   startDate: "2027-04-02",                // 第一天日期，其餘日期自動往後推算
   chart: "",                              // 選填：行程總覽圖，例如 "assets/chart.png"
+  timeZone: "Asia/Tokyo",                 // 今天與延誤提醒使用目的地時間
 
   currency:     { code: "JPY", symbol: "¥",   name: "日圓" },
   homeCurrency: { code: "TWD", symbol: "NT$", name: "台幣" },

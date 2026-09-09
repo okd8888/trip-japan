@@ -10,6 +10,8 @@
   const esc = T.esc;
 
   let draft = clone(T.trip);
+  document.addEventListener('tripchanged', () => { draft = clone(T.trip); });
+  document.addEventListener('tripview', e => { if(e.detail === 'edit') { draft = clone(T.trip); renderAll(); } });
   let edDay = 0;
   let trimmed = [];   // 這次縮短天數時被裁掉的日子，重新延長時可救回（只存在本次瀏覽）
   let lastLeft = 0;   // 上一次重排後沒排進行程的建議景點數
@@ -45,6 +47,7 @@
     $('#setDestName').value = draft.destName || '';
     $('#setId').value = draft.id || '';
     $('#setStart').value = draft.startDate || '';
+    $('#setTimeZone').value = draft.timeZone || '';
     const e = endDate();
     $('#setEnd').value = e ? T.iso(e) : '';
     updateDaysInfo();
@@ -69,6 +72,9 @@
   }
 
   function applyBasic() {
+    const timeZone = $('#setTimeZone').value.trim();
+    try { if (timeZone) new Intl.DateTimeFormat('zh-TW', {timeZone}); }
+    catch (_) { return msg('#setMsg', '時區無效，例如日本請填 Asia/Tokyo。', false); }
     const s = T.parseDate($('#setStart').value), e = T.parseDate($('#setEnd').value);
     if (!s || !e) return msg('#setMsg', '請先選擇出發與回程日期。', false);
     const n = T.dayCount(s, e) + 1;
@@ -117,6 +123,7 @@
     draft.eyebrow = (dest && dest.id !== 'custom' ? dest.eyebrow : (draft.destName || 'TRIP')).toUpperCase();
     draft.id = newId;
     draft.startDate = $('#setStart').value;
+    draft.timeZone = timeZone;
     draft.currency = findCur($('#setCur').value) || draft.currency;
     draft.homeCurrency = findCur($('#setHome').value) || draft.homeCurrency;
     if (!draft.categories || !draft.categories.length) draft.categories = clone(P.categories);
@@ -370,6 +377,7 @@
         <span class="d">Day ${i + 1}${last ? '（最後一晚）' : ''}<br>${esc(T.fmtDate(dateOf(i)))}</span>
         <input data-stay="${i}" data-k="name" placeholder="飯店名稱" value="${esc(st.name || '')}">
         <input data-stay="${i}" data-k="map" placeholder="導航關鍵字（留空用飯店名）" value="${esc(st.map || '')}">
+        <details class="stay-fields"><summary>入住、停車與訂房資訊</summary><div class="grid3">${[['checkIn','Check-in','time'],['checkOut','Check-out','time'],['parking','停車場','text'],['parkingFee','停車費','text'],['breakfast','早餐時間','text'],['address','地址','text'],['phone','電話','tel'],['googleMaps','Google Maps 網址','url'],['website','官網','url'],['reservationNo','訂房編號（私人，不公開）','text']].map(([k,l,type]) => `<label class="field"><span>${l}</span><input type="${type}" data-stay="${i}" data-k="${k}" value="${esc(st[k] || '')}"></label>`).join('')}</div></details>
         <button class="mini" data-copyprev="${i}" ${i === 0 ? 'disabled' : ''}>同前一晚</button>
       </div>`;
     }).join('') || '<p class="empty">還沒有天數，請先在上面設定日期。</p>';
@@ -387,9 +395,11 @@
     $('#edDayNotes').value = day ? (day.notes || '') : '';
     $('#edDelDay').disabled = ds.length <= 1;
 
+    $('#edAddItem').disabled = !day;
     const items = day ? (day.items || []) : [];
-    $('#itemEditor').innerHTML = items.map((it, i) => `<div class="ed-item">
+    $('#itemEditor').innerHTML = items.map((it, i) => `<div class="ed-item" data-item-index="${i}">
       <div class="ed-head"><b>第 ${i + 1} 站</b><div class="mini-row">
+        <button class="mini" draggable="true" data-drag-item="${i}" aria-label="拖曳第 ${i+1} 站排序">拖曳</button>
         <button class="mini" data-mv="${i}" data-dir="-1" ${i === 0 ? 'disabled' : ''}>↑ 上移</button>
         <button class="mini" data-mv="${i}" data-dir="1" ${i === items.length - 1 ? 'disabled' : ''}>↓ 下移</button>
         <button class="mini" data-dup="${i}">複製</button>
@@ -402,9 +412,10 @@
       <label class="field"><span>說明</span><input data-it="${i}" data-k="desc" placeholder="這一站要注意什麼" value="${esc(it.desc || '')}"></label>
       <div class="grid3">
         <label class="field"><span>標籤</span><input data-it="${i}" data-k="tag" placeholder="例如：門票" value="${esc(it.tag || '')}"></label>
-        <label class="field"><span>預估花費（${esc(curCode())}）</span><input type="number" min="0" data-it="${i}" data-k="cost" value="${it.cost || ''}"></label>
+        <label class="field"><span>預估花費（${esc(curCode())}）</span><input type="number" min="0" data-it="${i}" data-k="cost" value="${esc(it.cost || '')}"></label>
         <label class="field"><span>導航關鍵字</span><input data-it="${i}" data-k="map" placeholder="留空則用名稱" value="${esc(it.map === false ? '' : (it.map || ''))}"></label>
       </div>
+      <details><summary>自駕、預約與雨備</summary><div class="grid3">${[['arrivalTime','抵達時間','time'],['arrivalDayOffset','抵達日偏移（0＝當日，1＝翌日）','number'],['stayMinutes','停留分鐘','number'],['driveMinutes','前站到此站車程（分）','number'],['distanceKm','前站到此站距離（km）','number'],['parking','停車場','text'],['parkingFee','停車費','text'],['mapCode','MapCode','text'],['googleMaps','Google Maps 網址','url'],['phone','電話','tel'],['reservationTime','預約時間','time'],['ticket','門票資訊','text'],['note','重要備註','text'],['rainPlan','雨備景點／安排','text'],['lat','緯度','number'],['lng','經度','number']].map(([k,l,type]) => `<label class="field"><span>${l}</span><input type="${type}" ${type==='number' ? 'step="any"' : ''} data-it="${i}" data-k="${k}" value="${esc(it[k] ?? '')}"></label>`).join('')}</div><div class="chips">${[['critical','重要提醒'],['reservation','需要預約'],['outdoor','戶外行程']].map(([k,l]) => `<label><input type="checkbox" data-it="${i}" data-k="${k}" ${it[k] ? 'checked' : ''}>${l}</label>`).join('')}</div></details>
     </div>`).join('') || '<p class="empty">這一天還沒有行程點，按下面的「新增行程點」開始。</p>';
 
     const dest = findDest(draft.destId);
@@ -420,6 +431,23 @@
   }
 
   /* ================= 打包清單 ================= */
+  $('#itemEditor').addEventListener('dragstart', e => {
+    const handle = e.target.closest('[data-drag-item]');
+    if (!handle) return;
+    e.dataTransfer.setData('text/plain', `${edDay}:${handle.dataset.dragItem}`);
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  $('#itemEditor').addEventListener('dragover', e => { if(e.target.closest('[data-item-index]')) e.preventDefault(); });
+  $('#itemEditor').addEventListener('drop', e => {
+    const target = e.target.closest('[data-item-index]');
+    if (!target) return;
+    e.preventDefault();
+    const [di, from] = e.dataTransfer.getData('text/plain').split(':').map(Number), to = +target.dataset.itemIndex;
+    const items = days()[edDay]?.items;
+    if (di !== edDay || !Number.isInteger(from) || !items?.[from] || from === to) return;
+    items.splice(to, 0, items.splice(from, 1)[0]); commit(); renderItems(); flash('#savedItems');
+  });
+
   function renderChecklist() {
     $('#edChecklist').value = (draft.checklist || []).join('\n');
   }
@@ -430,14 +458,15 @@
   function downloadTripJs() {
     T.download('trip.js',
       '/* 行程資料：覆蓋到專案的 data/trip.js，然後 git push */\nwindow.TRIP = '
-      + JSON.stringify(draft, null, 2) + ';\n', 'text/javascript;charset=utf-8');
+      + JSON.stringify(window.TripCore.publicTrip(draft), null, 2) + ';\n', 'text/javascript;charset=utf-8');
     msg('#tripMsg', '已下載 trip.js。把它覆蓋到專案的 data/trip.js，然後 git add -A && git commit && git push。');
   }
 
   /* ================= 事件 ================= */
-  const root = $('#view-edit');
+  const root = document;
 
   root.addEventListener('change', e => {
+    if (!e.target.closest('#view-edit, #syncAdvanced')) return;
     const t = e.target;
 
     if (t.matches('#setStart, #setEnd')) { updateDaysInfo(); return; }
@@ -469,7 +498,9 @@
 
     if (t.dataset.it !== undefined) {
       const it = days()[edDay].items[+t.dataset.it], k = t.dataset.k, v = t.value.trim();
-      if (k === 'cost') { const n = Number(v); if (n > 0) it.cost = n; else delete it.cost; }
+      if (t.type === 'checkbox') it[k] = t.checked;
+      else if (['stayMinutes','driveMinutes','distanceKm','lat','lng','arrivalDayOffset'].includes(k)) { const n=Number(v); if(v && Number.isFinite(n) && (['lat','lng'].includes(k) || n>=0)) it[k]=n; else delete it[k]; }
+      else if (k === 'cost') { const n = Number(v); if (n > 0) it.cost = n; else delete it.cost; }
       else if (v) it[k] = v; else delete it[k];
       commit(); flash('#savedItems'); return;
     }
@@ -499,6 +530,7 @@
   });
 
   root.addEventListener('click', e => {
+    if (!e.target.closest('#view-edit, #syncAdvanced')) return;
     const b = e.target.closest('button'); if (!b) return;
 
     if (b.dataset.edday !== undefined) { edDay = +b.dataset.edday; renderItems(); return; }
@@ -598,6 +630,7 @@
       case 'jsonApply': {
         let t; try { t = JSON.parse($('#tripJson').value); }
         catch (err) { return msg('#tripMsg', 'JSON 格式有誤：' + err.message, false); }
+        if (!window.TripCore.validTrip(t)) return msg('#tripMsg', '行程格式錯誤：請檢查 days 與 items。', false);
         draft = t; commit(); renderAll();
         msg('#tripMsg', '已套用 JSON。');
         break;
@@ -619,6 +652,7 @@
       try {
         const t = JSON.parse(fr.result);
         if (!t.days) throw new Error('這個檔案裡沒有 days 欄位');
+        if (!window.TripCore.validTrip(t)) return msg('#tripMsg', '行程格式錯誤：請檢查 days 與 items。', false);
         draft = t; commit(); renderAll();
         msg('#tripMsg', `已匯入「${t.title || '未命名行程'}」。`);
       } catch (err) { msg('#tripMsg', '匯入失敗：' + err.message, false); }
@@ -675,7 +709,7 @@
     SY().setConfig({ endpoint: f.endpoint, name: f.name });
     msg('#syncMsg', '建立中…');
     try {
-      const out = await SY().createTrip(draft);
+      const out = await SY().createTrip(T.trip);
       fillSyncFields(); renderSync();
       msg('#syncMsg', `建立完成，行程碼 ${out.code}。編輯金鑰只會出現在這台裝置，請按「複製分享連結」分享唯讀版本。`);
       await T.pullExpenses();
@@ -695,7 +729,7 @@
 
   async function syncManual() {
     if (!SY().enabled()) return msg('#syncMsg', '還沒設定同步。', false);
-    SY().setConfig(syncFields());
+    if (!confirm('取得最新行程會覆蓋本機行程修改，確定繼續？')) return;
     await T.syncNow();
     draft = clone(T.trip); renderAll();
   }

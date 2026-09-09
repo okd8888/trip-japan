@@ -5,7 +5,8 @@
 
   const $  = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
-  const OVERRIDE_KEY = 'tripOverride';
+  const shareSource = window.TripSync?.isShared ? `${window.TripSync.base()}:${window.TripSync.config.code}` : null;
+  const OVERRIDE_KEY = shareSource ? `sharedTrip:${shareSource}` : 'tripOverride';
 
   /* ---------------- 狀態 ---------------- */
   const fileTrip = window.TRIP || { title: '尚未設定行程', days: [] };
@@ -18,13 +19,13 @@
   const CUR  = () => trip.currency     || { code: 'JPY', symbol: '¥',   name: '當地幣' };
   const HOME = () => trip.homeCurrency || { code: 'TWD', symbol: 'NT$', name: '台幣' };
   const DAYS = () => trip.days || [];
-  const KEY  = { exp: () => `expenses:${trip.id || 'trip'}`, check: () => `checklist:${trip.id || 'trip'}` };
+  const KEY  = { exp: () => `expenses:${shareSource || trip.id || 'trip'}`, check: () => `checklist:${shareSource || trip.id || 'trip'}` };
 
   /* ---------------- 小工具 ---------------- */
   const WEEK = ['日', '一', '二', '三', '四', '五', '六'];
   const parseDate = s => { const [y, m, d] = String(s || '').split('-').map(Number); return (y && m && d) ? new Date(y, m - 1, d) : null; };
   const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
-  const startOfToday = () => { const t = new Date(); t.setHours(0, 0, 0, 0); return t; };
+  const startOfToday = () => parseDate(window.TripCore.localTime(trip.timeZone).date);
   const fmtDate = d => d ? `${d.getMonth() + 1}/${d.getDate()}（${WEEK[d.getDay()]}）` : '';
   const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const dayCount = (a, b) => Math.round((b - a) / 86400000);
@@ -34,7 +35,7 @@
   const mapUrl = q => 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(q);
 
   /* 車程估算：直線距離 × 1.35（一般道路繞路係數）÷ 平均時速 40 km/h。
-     不需要任何 API 金鑰，離線可用，誤差約 ±15%，足夠判斷「會不會開太久」。 */
+     不需要任何 API 金鑰，離線可用，僅作粗估，不代表道路距離或即時路況。 */
   const DETOUR = 1.35, KMH = 40;
   const hasGeo = p => p && typeof p.lat === 'number' && typeof p.lng === 'number';
   function driveInfo(a, b) {
@@ -170,7 +171,7 @@
     $('#todayTitle').textContent = day.title || `Day ${idx + 1}`;
     $('#todayBadge').textContent = `DAY ${idx + 1}`;
     $('#todayStay').innerHTML = stayHtml(day);
-    $('#todayTimeline').innerHTML = timelineHtml(day);
+    if (!window.TripCompanionReady) $('#todayTimeline').innerHTML = timelineHtml(day);
 
     if (before) {
       $('#countdownLabel').textContent = '距離出發';
@@ -213,11 +214,12 @@
     }
     $('#planTitle').textContent = `Day ${selectedDay + 1}　${d.title || ''}`;
     $('#planDate').textContent = fmtDate(dateOf(selectedDay)) || `第 ${selectedDay + 1} 天`;
-    $('#planTimeline').innerHTML = timelineHtml(d);
+    if (!window.TripCompanionReady) $('#planTimeline').innerHTML = timelineHtml(d);
     const stay = stayInner(d);
     $('#planStay').innerHTML = stay;
     $('#planStay').hidden = !stay;
     $('#planNotes').textContent = d.notes || '';
+    document.dispatchEvent(new Event('triprender'));
   }
 
   document.addEventListener('click', e => {
@@ -397,11 +399,13 @@
     bars($('#expBars'), Object.entries(byCat).sort((a, b) => b[1] - a[1]), total);
     bars($('#expDayBars'), Object.entries(byDay).sort((a, b) => a[0] - b[0]).map(([d, v]) => [`Day ${+d + 1}`, v]), total);
     $('#expBarsEmpty').hidden = rows.length > 0;
+    document.dispatchEvent(new Event('triprender'));
   }
 
   function bindExpenses() {
     $('#expForm').addEventListener('submit', e => {
       e.preventDefault();
+      if (window.TripSync?.readOnly()) return;
       const amount = +$('#expAmount').value;
       if (!(amount > 0)) return;
       expenses.push({
@@ -416,6 +420,7 @@
     });
 
     $('#expList').addEventListener('click', e => {
+      if (window.TripSync?.readOnly()) return;
       const b = e.target.closest('[data-del]');
       if (!b || !confirm('確定刪除這筆花費？')) return;
       const row = expenses.find(x => String(x.id) === b.dataset.del);
@@ -435,6 +440,7 @@
     });
 
     $('#expClear').addEventListener('click', () => {
+      if (window.TripSync?.readOnly()) return;
       if (!live().length || !confirm('會刪掉全部花費紀錄，且無法復原。確定嗎？')) return;
       const t = Date.now();
       expenses.forEach(x => { x.deleted = true; x.updatedAt = t; });
@@ -452,9 +458,14 @@
 
   let applyingRemote = false;   // 套用遠端資料時不能再推回去，否則兩台裝置會無限互推
   let expTimer = 0, tripTimer = 0;
+  const pendingKey = () => `tripPending:${S()?.base()}:${S()?.config.code}`;
 
   function applyRemoteTrip(next) {
     if (!next || !next.days) return;
+    if (!S().readOnly() && next.id === trip.id) next.days.forEach((d, i) => {
+      const old = trip.days[i]?.stay;
+      if (d.stay && old?.name === d.stay.name && old.reservationNo) d.stay.reservationNo = old.reservationNo;
+    });
     applyingRemote = true;
     try { window.TripApp.setTrip(next); } finally { applyingRemote = false; }
   }
@@ -480,19 +491,21 @@
   /* 編輯器每改一個欄位就會 commit 一次，所以行程要壓得比花費更久才送 */
   function pushTrip() {
     if (!syncOn() || !S().canEdit() || applyingRemote) return;
+    localStorage.setItem(pendingKey(), '1');
     clearTimeout(tripTimer);
     tripTimer = setTimeout(async () => {
+      const snapshot = JSON.stringify(trip), key = pendingKey();
       try {
-        const out = await S().pushTrip(trip);
+        const out = await S().pushTrip(JSON.parse(snapshot));
+        if (snapshot === JSON.stringify(trip)) localStorage.removeItem(key);
         syncStatus('ok', `行程已同步 v${out.version}（${new Date().toLocaleTimeString('zh-TW')}）`);
       } catch (err) {
         if (err.status === 409 && err.remote) {
           syncStatus('conflict', '這份行程已被其他裝置更新');
-          if (confirm('這份行程已被其他裝置更新。\n\n確定＝載入對方的版本（你剛才的修改會不見）\n取消＝保留你的版本，蓋過對方')) {
-            applyRemoteTrip(err.remote.trip);
-            syncStatus('ok', '已載入其他裝置的版本');
+          if (confirm('這份行程已被其他裝置更新。\n\n確定＝載入對方的版本（請先備份本機修改）\n取消＝保留本機修改，暫停發布')) {
+            await syncNow();
           } else {
-            pushTrip();   // sync.js 已把 version 更新成伺服器現況，重送就會成功
+            syncStatus('conflict', '已保留本機修改。請匯出備份後再取得最新行程。');
           }
         } else {
           syncStatus('error', '行程同步失敗：' + err.message);
@@ -508,6 +521,7 @@
     try {
       const out = await S().pullTrip();
       if (out && out.trip) applyRemoteTrip(out.trip);
+      localStorage.removeItem(pendingKey());
       await pullExpenses();
       syncStatus('ok', `已同步（${new Date().toLocaleTimeString('zh-TW')}）`);
     } catch (err) {
@@ -517,13 +531,16 @@
 
   /* ---------------- 分頁切換 ---------------- */
   function showView(name, push = true) {
+    if (name === 'edit' && window.TripSync?.readOnly()) name = 'more';
     const target = $('#view-' + name);
     if (!target) return;
+    document.body.dataset.activeView = name;
     $$('.view').forEach(v => v.classList.remove('active'));
     target.classList.add('active');
     $$('.tabbar button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
     if (name === 'plan') renderPlan();
     if (push && location.hash !== '#' + name) history.replaceState(null, '', '#' + name);
+    document.dispatchEvent(new CustomEvent('tripview', {detail:name}));
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -531,6 +548,7 @@
   function renderAll() {
     renderHeader(); renderFlights(); renderToday(); renderPlan(); renderChecklist();
     renderExpenseForm(); renderFxStatic(); loadExpenses(); renderExpenses(); fxFrom('foreign');
+    document.dispatchEvent(new Event('triprender'));
   }
 
   /* ---------------- 對外 API（給 editor.js） ---------------- */
@@ -540,10 +558,12 @@
     get usingOverride() { return usingOverride; },
     /** 更新行程；persist=false 時只重繪不寫入 localStorage */
     setTrip(next, persist = true) {
+      if (!window.TripCore.validTrip(next)) throw new Error('行程格式錯誤：days 必須為每日行程陣列');
       trip = next;
       if (persist) { localStorage.setItem(OVERRIDE_KEY, JSON.stringify(next)); usingOverride = true; }
       renderAll();
       if (persist) pushTrip();
+      document.dispatchEvent(new Event('tripchanged'));
     },
     clearOverride() { localStorage.removeItem(OVERRIDE_KEY); trip = fileTrip; usingOverride = false; renderAll(); },
     renderAll, showView, download, esc, fmtDate, parseDate, iso, addDays, dayCount, driveInfo,
@@ -571,11 +591,14 @@
   /* 分享連結 ?trip=CODE&api=... 會在這裡被吃掉並寫進設定，網址列隨即清乾淨 */
   if (S()) {
     const adopted = S().adoptFromUrl();
-    if (syncOn()) syncNow();
+    if (syncOn() && S().canEdit() && localStorage.getItem(pendingKey())) {
+      syncStatus('error', '保留尚未同步的本機修改，正在嘗試發布；若有版本衝突會提示。');
+      pushTrip();
+    } else if (syncOn()) syncNow();
     else if (adopted) syncStatus('error', '這個分享連結沒有帶同步端點，請到「設定」分頁補上。');
   }
 
-  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
 })();

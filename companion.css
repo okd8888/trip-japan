@@ -1,0 +1,47 @@
+/* 以旅途中單手操作為優先，沿用既有品牌色。 */
+[hidden]{display:none!important}
+body{font-size:16px;font-variant-numeric:tabular-nums}
+button,a,input,select,summary{touch-action:manipulation}
+button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid var(--hot);outline-offset:3px}
+.mini,.nav-btn,.btn{min-height:44px;display:inline-flex;align-items:center;justify-content:center;font-size:14px}
+.mini:hover,.btn:hover{filter:brightness(.94)}
+button:active{transform:translateY(1px)}
+#modeLabel{font-size:14px;color:var(--accent);font-weight:700;margin:0}
+#notice:empty{display:none}
+.version{font-size:12px;color:var(--muted)}
+.statusbar{display:flex;align-items:center;gap:12px;margin-bottom:12px}.statusbar p{margin:0}.statusbar .version{margin-left:auto}.statusbar #networkState{flex:1;min-width:0;font-size:12px}
+body[data-active-view=today] .hero{display:none}
+#quickDialog{background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:18px;width:min(480px,calc(100% - 24px));max-height:85dvh;padding:24px}
+#quickDialog::backdrop{background:rgba(10,30,28,.45)}
+#quickDialog textarea{min-height:100px}
+.day-note{white-space:pre-wrap}
+.hero{box-shadow:none;background:var(--accent);padding:20px 24px}
+.hero::after{display:none}.hero h1{font-size:32px}.hero-meta{display:none}
+.next-stop{border:2px solid var(--accent);box-shadow:none;background:var(--accent-soft);padding:24px;margin-top:16px}
+.next-stop h2{font-size:28px;line-height:1.4;margin:10px 0}.next-stop h2 span{display:block;font-size:20px}
+.next-stop .nav-btn{padding:12px 24px;font-size:16px}
+.summary-metrics{display:flex;flex-wrap:wrap;gap:12px}.route-names{color:var(--muted)}
+#daySummary{margin-top:16px;box-shadow:none}.note,.stop .desc,.stop .time{font-size:14px}
+#daySummary h2{font-size:24px;margin:4px 0}.route-names{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.stop{grid-template-columns:64px minmax(0,1fr);padding:22px 0;position:relative;border:0}
+.stop>div:last-child{border-left:2px solid var(--line);padding-left:18px;position:relative}
+.stop>div:last-child:before{content:'';position:absolute;width:10px;height:10px;border-radius:50%;background:var(--accent);left:-6px;top:7px}
+.stop h3{font-size:20px}.status{font-size:13px;color:var(--muted)}
+.stop.current{background:var(--accent-soft);border-radius:12px}.stop.current .status{color:var(--accent);font-weight:700}
+.stop.done h3,.stop.skipped h3{color:var(--muted)}.stop.done .status{color:var(--accent)}
+.facts{display:grid;grid-template-columns:90px minmax(0,1fr);gap:8px;font-size:14px}.facts dt{color:var(--muted)}.facts dd{margin:0;overflow-wrap:anywhere}
+details{padding:12px 0;border-bottom:1px solid var(--line)}summary{cursor:pointer;min-height:36px;align-content:center;font-size:14px}
+.tonight{background:var(--surface-2);padding:20px;border-radius:12px;margin:20px 0}
+.warning{color:var(--hot);background:var(--hot-soft);padding:16px;border-radius:12px}
+.route-point{display:flex;gap:18px;border-left:2px solid var(--accent);padding:18px}.route-point>b{color:var(--accent)}
+.route-switch{margin-bottom:18px}[aria-pressed=true]{background:var(--accent-soft);color:var(--accent)}
+#drivingCosts p{display:flex;justify-content:space-between;gap:12px}
+#fxForeign,#fxHome{font-size:28px;min-height:64px}.stay-fields{grid-column:1/-1}
+.readonly .edit-entry,.readonly #view-edit{display:none!important}
+.readonly #expForm,.readonly #expClear,.readonly [data-del]{display:none!important}
+.tabbar button[data-view=money]{background:var(--accent);color:var(--surface);border-radius:12px}
+.tabbar{transform:none;left:0;right:0;margin-inline:auto}
+#view-today aside>.panel:first-child{box-shadow:none}#view-today aside .card{padding:10px}
+@media(min-width:900px){#view-plan>.panel{display:grid;grid-template-columns:180px minmax(0,1fr);column-gap:24px}#view-plan .section-head{grid-column:1/-1}#dayTabs{grid-column:1;grid-row:2/7;flex-direction:column;align-self:start;position:sticky;top:18px}#view-plan .route-switch,#routeMap,#planTimeline,#planStay,#planNotes{grid-column:2}}
+@media(max-width:700px){.hero h1{font-size:28px}.hero{padding:18px}.tabbar{position:fixed;bottom:0;left:0;right:0;padding-bottom:calc(8px + env(safe-area-inset-bottom));z-index:20}.tabbar button{min-height:52px;font-size:14px}.next-stop{padding:20px}.stop{gap:4px}.stop>div:last-child{padding-left:12px}.hero p{font-size:14px}.panel{padding:16px}.stay-row{display:flex;flex-direction:column;align-items:stretch}.stay-fields{width:100%}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important}}

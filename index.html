@@ -4,9 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f5c53">
-<meta name="description" content="旅遊行程規劃手冊：行程時間軸、花費記錄、匯率換算，離線可用。">
+<meta name="description" content="自駕旅遊行程助手：下一站導航、停車資訊、每日時間軸、旅費與匯率，離線可用。">
+<meta name="application-version" content="2.0.0">
 <title>旅遊行程手冊</title>
 <link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="assets/icon-192.png">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>">
 <style>
 :root{
@@ -184,9 +186,12 @@ details.adv[open] summary{margin-bottom:12px}
   .row{grid-template-columns:1fr}
 }
 </style>
+<link rel="stylesheet" href="companion.css">
 </head>
 <body>
 <main class="app">
+<div class="statusbar"><p id="modeLabel">旅行模式</p><p id="networkState" class="note"></p><span id="appVersion" class="version">v2.0.0</span></div>
+<p id="notice" role="status" aria-live="polite"></p>
   <header class="topbar">
     <div class="brand" id="brand">旅遊行程手冊</div>
     <span class="pill" id="dateRange">—</span>
@@ -201,6 +206,7 @@ details.adv[open] summary{margin-bottom:12px}
 
   <!-- 今天 -->
   <section id="view-today" class="view active">
+<div id="daySummary" class="panel"></div><section id="nextStop" class="panel next-stop"></section><section id="delayPanel" class="panel warning" hidden></section>
     <div class="layout">
       <div>
         <div class="panel" id="chartPanel" hidden>
@@ -212,8 +218,8 @@ details.adv[open] summary{margin-bottom:12px}
             <div><p id="todayEyebrow">今天</p><h2 id="todayTitle">—</h2></div>
             <span class="pill" id="todayBadge">—</span>
           </div>
-          <div id="todayStay"></div>
-          <div class="timeline" id="todayTimeline"></div>
+          <button class="mini" id="compactToggle" aria-pressed="false">切換精簡</button><div id="todayStay"></div>
+          <div class="timeline" id="todayTimeline"></div><section class="tonight"><p>今晚住宿</p><div id="tonight"></div></section><section><h3>重要提醒</h3><div id="important"></div></section>
         </div>
       </div>
       <aside>
@@ -240,7 +246,7 @@ details.adv[open] summary{margin-bottom:12px}
     <div class="panel">
       <div class="section-head"><div><p>每一天的路線</p><h2 id="planTitle">—</h2></div><span class="pill" id="planDate">—</span></div>
       <div class="day-tabs" id="dayTabs"></div>
-      <div class="timeline" id="planTimeline"></div>
+      <div class="chips route-switch"><button class="mini" data-route="timeline" aria-pressed="true">時間軸</button><button class="mini" data-route="map" aria-pressed="false">地圖／路線</button></div><div id="routeMap" hidden></div><div class="timeline" id="planTimeline"></div>
       <div class="stay" id="planStay" hidden></div>
       <p class="note" id="planNotes" style="margin-top:14px"></p>
     </div>
@@ -251,7 +257,8 @@ details.adv[open] summary{margin-bottom:12px}
     <div class="layout">
       <div class="panel">
         <div class="section-head"><div><p>旅途中的每一筆</p><h2>記下花費</h2></div></div>
-        <form class="form" id="expForm">
+        <div class="chips edit-entry"><button class="mini" data-quick="item">＋ 新增景點</button><button class="mini" data-quick="note">＋ 新增備註</button></div>
+        <form class="form" id="expForm"><div class="chips" id="quickAmounts"></div>
           <div class="row">
             <input id="expAmount" type="number" min="0" step="1" inputmode="decimal" placeholder="金額" required>
             <select id="expCategory"></select>
@@ -277,7 +284,7 @@ details.adv[open] summary{margin-bottom:12px}
         </div>
         <div class="panel">
           <div class="section-head"><div><p>每日花費</p><h2>逐日總計</h2></div></div>
-          <div class="bars" id="expDayBars"></div>
+          <div class="bars" id="expDayBars"></div><h3>自駕成本</h3><div id="drivingCosts"></div>
         </div>
         <div class="panel">
           <p class="note">花費只存在這台裝置的瀏覽器（localStorage），不會上傳任何伺服器。換手機或清除瀏覽資料就會消失，建議旅程結束前先「匯出 CSV」。</p>
@@ -339,6 +346,7 @@ details.adv[open] summary{margin-bottom:12px}
         <label class="field"><span>本國幣別</span><select id="setHome"></select></label>
       </div>
       <label class="field"><span>行程代號（換代號＝花費紀錄分開存放）</span><input id="setId" placeholder="okinawa-2026-12"></label>
+      <label class="field"><span>目的地時區（日本：Asia/Tokyo）</span><input id="setTimeZone" placeholder="留空使用裝置時區"></label>
       <div class="btn-row">
         <button class="btn" id="setApply">套用設定</button>
       </div>
@@ -446,19 +454,35 @@ details.adv[open] summary{margin-bottom:12px}
     </div>
   </section>
 
-  <nav class="tabbar">
+  <section id="view-more" class="view"><div class="panel"><h2>更多旅途工具</h2>
+<div class="chips"><button class="btn sub" data-go="money">花費統計</button><button class="btn sub edit-entry" data-go="edit">編輯行程／備份</button></div>
+<details open><summary>住宿資訊</summary><div id="allHotels"></div></details><div id="moreFlights"></div><div id="moreChecklist"></div><div id="moreChart"></div>
+</div><section class="panel"><h2>分享與同步</h2><p>唯讀連結可查看最新行程，不含訂房編號。已連結的編輯裝置會自動同步行程與花費。</p>
+<div class="chips"><button class="btn" id="shareCopy">複製唯讀連結</button><button class="btn sub" id="syncPull">取得最新行程</button></div><p id="syncStatus" role="status"></p>
+<details id="syncAdvanced" class="edit-entry"><summary>進階設定</summary><div id="syncAdvancedFields"></div></details>
+</section></section><nav class="tabbar" aria-label="主要導覽">
     <button class="active" data-view="today">今天</button>
     <button data-view="plan">行程</button>
-    <button data-view="money">花費</button>
+    <button data-view="money" aria-label="新增記帳">＋ 記帳</button>
     <button data-view="fx">匯率</button>
-    <button data-view="edit">編輯</button>
+    <button data-view="more">更多</button>
   </nav>
 </main>
+<dialog id="quickDialog"><form id="quickForm">
+  <h2 id="quickTitle">新增景點</h2>
+  <label class="field"><span>加入哪一天</span><select id="quickDay"></select></label>
+  <label class="field" id="quickNameField"><span>景點名稱</span><input id="quickName" required></label>
+  <label class="field" id="quickTimeField"><span>抵達時間</span><input id="quickTime" type="time"></label>
+  <label class="field"><span>備註</span><textarea id="quickNote"></textarea></label>
+  <div class="chips"><button class="btn" type="submit">儲存</button><button class="btn sub" type="button" id="quickCancel">取消</button></div>
+</form></dialog>
 
 <script src="data/presets.js"></script>
 <script src="data/trip.js"></script>
+<script src="companion-core.js"></script>
 <script src="sync.js"></script>
 <script src="app.js"></script>
 <script src="editor.js"></script>
+<script src="companion.js"></script>
 </body>
 </html>
