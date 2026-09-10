@@ -32,16 +32,16 @@
   }
 
   const base = () => String(config.endpoint || '').replace(/\/+$/, '');
-  const enabled = () => !!(base() && config.code);
-  const canEdit = () => !readOnly() && enabled();
-  const readOnly = () => isShared || !isAdmin || sessionExpired;
+  const enabled = () => (isAdmin || isShared) && !!(base() && config.code);
+  const canEdit = () => isAdmin && !readOnly() && enabled();
+  const readOnly = () => isShared || sessionExpired;
 
   async function api(path, { method = 'GET', body, auth = false } = {}) {
     if (!base()) throw new Error('還沒設定同步端點');
     const headers = {};
     if (body !== undefined) headers['content-type'] = 'application/json';
     if (auth) {
-      if (readOnly()) throw new Error('請從管理入口登入');
+      if (!isAdmin || readOnly()) throw new Error('請從管理入口登入');
     }
     const res = await fetch(base() + (isAdmin && !isShared ? '/admin' : '') + path, {
       method, headers, cache: 'no-store', signal: AbortSignal.timeout(15000),

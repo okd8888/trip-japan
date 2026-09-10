@@ -449,9 +449,10 @@ details.adv[open] summary{margin-bottom:12px}
   <section id="view-more" class="view"><div class="panel"><h2>更多旅途工具</h2>
 <p id="adminStatus">目前為唯讀瀏覽。</p><div class="chips"><a class="btn sub" id="adminLogin" href="https://jolly-field-3c8a.claude-code-okd8899.workers.dev/admin/">管理者登入</a><button class="btn sub" id="adminLogout" hidden>登出</button></div>
 <label class="field" id="adminTripsField" hidden><span>管理其他行程</span><select id="adminTrips"><option value="">選擇行程</option></select></label>
-<div class="chips"><button class="btn sub" data-go="money">花費統計</button><button class="btn sub edit-entry" data-go="edit">編輯行程／備份</button></div>
+<div class="chips"><button class="btn sub" data-go="money">花費統計</button><button class="btn sub edit-entry" data-go="edit">編輯行程／備份・設定目的地與自動排程</button></div>
+<a class="btn" id="personalTrip" href="./#edit" hidden>建立自己的旅程</a>
 <details open><summary>住宿資訊</summary><div id="allHotels"></div></details><div id="moreFlights"></div><div id="moreChecklist"></div><div id="moreChart"></div>
-</div><section class="panel"><h2>分享與同步</h2><p>唯讀連結可查看最新行程，不含訂房編號。已連結的編輯裝置會自動同步行程與花費。</p>
+</div><section class="panel"><h2>分享與同步</h2><p>個人旅程儲存在各自瀏覽器，可匯出備份。雲端同步需管理者登入；收到分享連結的人只能查看該份行程。</p>
 <div class="chips"><button class="btn" id="shareCopy">複製唯讀連結</button><button class="btn sub" id="syncPull">取得最新行程</button></div><p id="syncStatus" role="status"></p>
 <details id="syncAdvanced" class="edit-entry"><summary>進階設定</summary><div id="syncAdvancedFields"></div></details>
 </section></section><nav class="tabbar" aria-label="主要導覽">

@@ -1,5 +1,5 @@
 /* 極簡 Service Worker：優先走網路（內容永遠最新），沒網路時用快取（出國離線也能開） */
-const CACHE = 'trip-handbook-v2.1.0';
+const CACHE = 'trip-handbook-v2.1.1';
 const ASSETS = ['./', './index.html', './app.js', './editor.js', './companion-core.js', './companion.js', './companion.css', './sync.js', './data/trip.js', './data/presets.js', './manifest.webmanifest', './version.json', './assets/icon.svg', './assets/icon-192.png', './assets/icon-512.png'];
 
 self.addEventListener('install', e => {

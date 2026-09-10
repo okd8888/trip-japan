@@ -7,7 +7,7 @@
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const shareSource = window.TripSync?.isShared ? `${window.TripSync.base()}:${window.TripSync.config.code}` : null;
   const adminSource = () => window.TripSync?.isAdmin && window.TripSync.enabled() && !shareSource ? `${window.TripSync.base()}:${window.TripSync.config.code}` : null;
-  const overrideKey = () => shareSource ? `sharedTrip:${shareSource}` : adminSource() ? `adminTrip:${adminSource()}` : 'tripOverride';
+  const overrideKey = () => shareSource ? `sharedTrip:${shareSource}` : adminSource() ? `adminTrip:${adminSource()}` : window.TripSync?.isAdmin ? 'adminTripDraft' : 'tripOverride';
 
   /* ---------------- 狀態 ---------------- */
   const fileTrip = window.TRIP || { title: '尚未設定行程', days: [] };

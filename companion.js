@@ -11,6 +11,13 @@
   const labels = { pending: '○ 尚未前往', current: '● 現在', done: '✓ 已完成', skipped: '↷ 已跳過' };
   for (const [source, target] of [['flightPanel','moreFlights'],['checklistPanel','moreChecklist'],['chartPanel','moreChart']]) $('#'+target).append($('#'+source));
   $('#syncAdvancedFields').append($('#syncBadge').closest('.panel'));
+  $('#syncAdvanced').hidden = !window.TripSync.isAdmin;
+  $('#shareCopy').hidden = !window.TripSync.enabled();
+  $('#syncPull').hidden = !window.TripSync.enabled();
+  $('#personalTrip').hidden = !window.TripSync.isShared;
+  if (!window.TripSync.isAdmin && !window.TripSync.isShared) {
+    $('#adminStatus').textContent = '個人旅程：免登入即可修改目的地與自動排行程，修改只儲存在這個瀏覽器。可在「編輯行程／備份」匯出備份。';
+  }
   if (window.TripSync.isAdmin && !window.TripSync.isShared) {
     $('#adminStatus').textContent = '管理模式已開啟。管理入口需連線登入；唯讀分享頁可離線查看。';
     $('#adminLogin').hidden = true;
