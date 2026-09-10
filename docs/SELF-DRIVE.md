@@ -1,5 +1,7 @@
 # 自駕助手 v2.0.0
 
+> 本文件記錄 v2.0.0 的驗收範圍。後續管理權限已改採自訂 Token；最新設定與驗收要求見 [ADMIN-TOKEN.md](ADMIN-TOKEN.md)，下列編輯金鑰流程不再適用新版。
+
 規格來源：`data/trip_japan_ui_ux_optimization_recommendations.md`。本版完成目前階段的旅行 UI 與自駕功能，保留遠端既有 Worker＋D1、花費同步及匯率端點；未另建 KV 後端。逐章核對結果見 [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md)。
 
 ## 入口

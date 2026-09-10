@@ -10,15 +10,21 @@
   const CURSOR_KEY = code => `tripSyncCursor:${code}`;
   const query = new URLSearchParams(location.search);
   const isShared = query.has('trip');
+  const isAdmin = window.TripIdentity?.role === 'admin' && location.pathname.startsWith('/admin/');
 
   let config = { endpoint: '', code: '', editKey: '', name: '' };
   try {
     const raw = localStorage.getItem(CONFIG_KEY);
     if (raw) config = { ...config, ...JSON.parse(raw) };
   } catch (_) { localStorage.removeItem(CONFIG_KEY); }
+  if (isAdmin && !isShared) {
+    config = {...config, endpoint:location.origin, editKey:'', name:window.TripIdentity.name};
+    if (query.get('code')) config.code = query.get('code');
+  }
 
   const listeners = new Set();
   let status = { state: 'idle', message: '', at: 0 };
+  let sessionExpired = false;
 
   function setStatus(state, message) {
     status = { state, message, at: Date.now() };
@@ -27,24 +33,27 @@
 
   const base = () => String(config.endpoint || '').replace(/\/+$/, '');
   const enabled = () => !!(base() && config.code);
-  const canEdit = () => !!(enabled() && config.editKey);
-  const readOnly = () => isShared || (enabled() && !canEdit());
+  const canEdit = () => !readOnly() && enabled();
+  const readOnly = () => isShared || !isAdmin || sessionExpired;
 
   async function api(path, { method = 'GET', body, auth = false } = {}) {
     if (!base()) throw new Error('還沒設定同步端點');
     const headers = {};
     if (body !== undefined) headers['content-type'] = 'application/json';
     if (auth) {
-      if (!config.editKey) throw new Error('沒有編輯金鑰，目前是唯讀狀態');
-      headers['x-edit-key'] = config.editKey;
+      if (readOnly()) throw new Error('請從管理入口登入');
     }
-    const res = await fetch(base() + path, {
+    const res = await fetch(base() + (isAdmin && !isShared ? '/admin' : '') + path, {
       method, headers, cache: 'no-store', signal: AbortSignal.timeout(15000),
       body: body === undefined ? undefined : JSON.stringify(body)
     });
     let data = null;
     try { data = await res.json(); } catch (_) {}
     if (!res.ok) {
+      if (res.status === 401 && isAdmin) {
+        sessionExpired = true;
+        setStatus('error', '登入已逾時，請重新登入；本機修改已保留。');
+      }
       const err = new Error((data && data.error) || `伺服器回應 ${res.status}`);
       err.status = res.status; err.data = data;
       throw err;
@@ -59,8 +68,9 @@
   const saveVersion = value => { version = value; localStorage.setItem(versionKey(), String(value)); };
 
   async function createTrip(trip) {
-    const out = await api('/api/trip', { method: 'POST', body: { trip: window.TripCore.publicTrip(trip), by: config.name } });
-    setConfig({ code: out.code, editKey: out.editKey });
+    const out = await api('/api/trip', { method: 'POST', auth:true, body: { trip: window.TripCore.publicTrip(trip), by: config.name } });
+    setConfig({ code: out.code, editKey: '' });
+    localStorage.setItem(`adminTrip:${base()}:${config.code}`, JSON.stringify(trip));
     saveVersion(out.version);
     localStorage.setItem(CURSOR_KEY(out.code), '0');
     return out;
@@ -135,6 +145,7 @@
   function setConfig(patch) {
     const previous = versionKey();
     config = { ...config, ...patch };
+    if (isAdmin && !isShared) config = {...config, endpoint:location.origin, editKey:'', name:window.TripIdentity.name};
     if (isShared) config.editKey = '';
     else localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
     if (previous !== versionKey()) version = Number(localStorage.getItem(versionKey())) || 0;
@@ -145,14 +156,14 @@
     const code = config.code;
     localStorage.removeItem(CONFIG_KEY);
     if (code) localStorage.removeItem(CURSOR_KEY(code));
-    config = { endpoint: '', code: '', editKey: '', name: '' };
+    config = { endpoint: isAdmin ? location.origin : '', code: '', editKey: '', name: isAdmin ? window.TripIdentity.name : '' };
     version = 0;
   }
 
   /** 分享連結：只帶行程碼與端點，不帶編輯金鑰，所以拿到的人是唯讀 */
   function shareUrl() {
     if (!enabled()) return '';
-    const u = new URL(location.href);
+    const u = new URL(isAdmin ? 'https://okd8888.github.io/trip-japan/' : location.href);
     u.hash = '';
     u.search = `?trip=${encodeURIComponent(config.code)}&api=${encodeURIComponent(base())}`;
     return u.toString();
@@ -174,12 +185,13 @@
   }
 
   if (isShared) { config = {endpoint:'',code:'',editKey:'',name:''}; adoptFromUrl(); }
+  else if (isAdmin) setConfig({});
 
   window.TripSync = {
     get config() { return { ...config }; },
     get version() { return version; },
     get status() { return { ...status }; },
-    base, enabled, canEdit, readOnly, isShared, setConfig, disconnect, setStatus,
+    base, enabled, canEdit, readOnly, isShared, isAdmin, setConfig, disconnect, setStatus,
     createTrip, pullTrip, pushTrip, syncExpenses, mergeExpenses,
     shareUrl, adoptFromUrl,
     onStatus(fn) { listeners.add(fn); return () => listeners.delete(fn); }

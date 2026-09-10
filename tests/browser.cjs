@@ -1,18 +1,44 @@
 const {chromium}=require(process.env.PLAYWRIGHT_PATH || 'C:/Users/tlogin/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
 const http=require('node:http'),fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const root=path.resolve(__dirname,'..');
-const server=http.createServer((req,res)=>{const file=path.join(root,decodeURIComponent(new URL(req.url,'http://localhost').pathname === '/' ? '/index.html' : new URL(req.url,'http://localhost').pathname));if(!file.startsWith(root+path.sep)){res.writeHead(403);return res.end();}fs.readFile(file,(err,data)=>{if(err){res.writeHead(404);return res.end();}res.setHeader('Content-Type',({'.js':'text/javascript','.css':'text/css','.html':'text/html','.svg':'image/svg+xml'})[path.extname(file)] || 'application/json');res.end(data);});});
+let worker,env,adminToken;
+const asset=async request=>{
+  let pathname=decodeURIComponent(new URL(request.url).pathname).replace(/^\/admin\//,'/');
+  if(pathname==='/')pathname='/index.html';
+  const file=path.join(root,pathname);
+  if(!file.startsWith(root+path.sep))return new Response(null,{status:403});
+  try{return new Response(await fs.promises.readFile(file),{headers:{'content-type':({'.js':'text/javascript','.css':'text/css','.html':'text/html','.svg':'image/svg+xml'})[path.extname(file)] || 'application/json'}});}
+  catch(_){return new Response(null,{status:404});}
+};
+const server=http.createServer(async(req,res)=>{
+  try{
+    const url=`http://${req.headers.host}${req.url}`,pathname=new URL(url).pathname;
+    const chunks=[];for await(const chunk of req)chunks.push(chunk);
+    const headers={...req.headers};
+    if(pathname.startsWith('/admin/'))headers.cookie=adminToken;
+    const request=new Request(url,{method:req.method,headers,body:['GET','HEAD'].includes(req.method)?undefined:Buffer.concat(chunks)});
+    const response=pathname.endsWith('/api/rate')?Response.json({rate:0.22,source:'test'}):pathname.startsWith('/admin/')||pathname.startsWith('/api/')?await worker.fetch(request,env):await asset(request);
+    res.writeHead(response.status,Object.fromEntries(response.headers));res.end(Buffer.from(await response.arrayBuffer()));
+  }catch(error){res.writeHead(500);res.end(error.message);}
+});
 (async()=>{
   await new Promise(r=>server.listen(0,'127.0.0.1',r));const url=`http://127.0.0.1:${server.address().port}`;
   const browser=await chromium.launch({headless:true,channel:'msedge'});
-  const {default:worker}=await import('../worker/src/index.js');
-  const {env,db}=require('./d1.cjs')();
+  worker=(await import('../worker/src/index.js')).default;
+  const database=require('./d1.cjs')(),db=database.db;
+  const auth=await require('./auth.cjs')();
+  env={...database.env,...auth.env,ASSETS:{fetch:asset}};
+  adminToken=(await auth.login(worker,env,url)).cookie;
+  const adminUrl=url+'/admin/';
   try{
     const page=await browser.newPage({viewport:{width:390,height:844}}),errors=[];
     page.on('pageerror',e=>errors.push(e.message));
     page.on('dialog',d=>d.accept());
     await page.route('https://**/*',r=>r.abort());
     await page.goto(url);await page.waitForSelector('#nextStop h2');
+    assert.equal(await page.evaluate(()=>TripSync.readOnly()),true);
+    assert.equal(await page.locator('[data-status]').count(),0);
+    await page.goto(adminUrl);await page.waitForSelector('#nextStop h2');
     assert.equal(await page.locator('#syncEndpoint').count(),1);
     const initial=await page.evaluate(()=>JSON.parse(JSON.stringify(TripApp.trip)));
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
@@ -47,23 +73,12 @@ const server=http.createServer((req,res)=>{const file=path.join(root,decodeURICo
     await page.screenshot({path:path.join(root,'tests/mobile.png'),fullPage:true});
     await page.setViewportSize({width:1440,height:1000});await page.locator('[data-view="plan"]').click();await page.locator('[data-route="timeline"]').click();
     await page.screenshot({path:path.join(root,'tests/desktop.png'),fullPage:true});
-    await page.evaluate(()=>navigator.serviceWorker.ready);
-    await page.reload();await page.context().setOffline(true);await page.reload();
-    assert.equal(await page.locator('#nextStop h2').count(),1);
-    assert.match(await page.locator('#networkState').innerText(),/離線/);
-    await page.context().setOffline(false);
     await page.route('https://api.open-meteo.com/**',r=>r.fulfill({json:{daily:{temperature_2m_max:[24],precipitation_probability_max:[85],wind_speed_10m_max:[18]}}}));
     await page.evaluate(()=>{const t=structuredClone(TripApp.trip);t.days[0].items[0].lat=26.2;t.days[0].items[0].lng=127.7;t.days[0].items[0].outdoor=true;t.days[0].items[0].rainPlan='室內美術館';TripApp.setTrip(t);});
     await page.waitForFunction(()=>document.querySelector('#weatherInfo').textContent.includes('85%'));
     assert.match(await page.locator('#daySummary').innerText(),/室內美術館/);
-    await page.route('https://sync.example.com/api/**',async r=>{
-      const req=r.request();
-      if(req.url().includes('/api/rate'))return r.fulfill({json:{rate:0.22,source:'test'}});
-      const response=await worker.fetch(new Request(req.url(),{method:req.method(),headers:req.headers(),body:['GET','HEAD'].includes(req.method())?undefined:req.postData()}),env);
-      return r.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:await response.text()});
-    });
     await page.locator('[data-view="more"]').click();await page.locator('#syncAdvanced summary').first().click();
-    await page.locator('#syncEndpoint').fill('https://sync.example.com');await page.locator('#syncCreate').click();
+    await page.locator('#syncCreate').click();
     await page.waitForFunction(()=>TripSync.version===1);
     await page.evaluate(()=>{const t=structuredClone(TripApp.trip);t.days[0].stay.reservationNo='private-test';TripApp.setTrip(t);});
     await page.waitForFunction(()=>TripSync.version===2);
@@ -73,23 +88,48 @@ const server=http.createServer((req,res)=>{const file=path.join(root,decodeURICo
     assert.equal(await page.evaluate(()=>TripSync.version),2);
     await page.context().setOffline(true);
     await page.evaluate(()=>{const t=structuredClone(TripApp.trip);t.days[0].notes='離線修改必須保留';TripApp.setTrip(t);});
-    await page.reload();assert.equal(await page.evaluate(()=>TripApp.trip.days[0].notes),'離線修改必須保留');
+    assert.equal(await page.evaluate(()=>TripApp.trip.days[0].notes),'離線修改必須保留');
     await page.context().setOffline(false);await page.reload();await page.waitForFunction(()=>TripSync.version===3);
     assert.equal(JSON.parse(db.prepare('SELECT trip FROM trips').get().trip).days[0].notes,'離線修改必須保留');
     const shared=await page.evaluate(()=>TripSync.shareUrl());
+    assert.equal(new URL(shared).origin,'https://okd8888.github.io');
     const ownerConfig=await page.evaluate(()=>localStorage.getItem('tripSync'));
-    await page.goto(shared+'#edit');await page.waitForFunction(()=>TripSync.status.state==='ok');
+    await page.route('https://sync.example.com/api/**',async route=>{
+      const response=await worker.fetch(new Request(route.request().url()),env);
+      return route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:await response.text()});
+    });
+    const sharedLocal=new URL(shared);sharedLocal.searchParams.set('api','https://sync.example.com');
+    await page.goto(url+sharedLocal.search+'#edit');await page.waitForFunction(()=>TripSync.status.state==='ok');
     assert.equal(await page.locator('#view-edit').isVisible(),false);assert.equal(await page.locator('[data-status]').count(),0);
     assert.equal(await page.evaluate(()=>TripSync.canEdit()),false);
     assert.equal(await page.evaluate(()=>localStorage.getItem('tripSync')),ownerConfig);
     assert.equal(await page.evaluate(()=>TripApp.trip.days[0].stay.reservationNo),undefined);
-    await page.goto(url);await page.waitForFunction(()=>TripSync.status.state==='ok');
+    await page.evaluate(()=>navigator.serviceWorker.ready);
+    await page.reload();await page.context().setOffline(true);await page.reload();
+    assert.equal(await page.locator('#nextStop h2').count(),1);
+    assert.match(await page.locator('#networkState').innerText(),/離線/);
+    assert.equal(await page.locator('[data-status]').count(),0);
+    await page.context().setOffline(false);
+    await page.goto(adminUrl);await page.waitForFunction(()=>TripSync.status.state==='ok');
+    const originalCode=await page.evaluate(()=>TripSync.config.code);
+    const otherResponse=await worker.fetch(new Request(url+'/admin/api/trip',{method:'POST',headers:{origin:url,'content-type':'application/json',cookie:adminToken},body:JSON.stringify({trip:{...initial,title:'第二份行程'}})}),env);
+    const otherCode=(await otherResponse.json()).code;
+    await page.goto(adminUrl+'?code='+otherCode);await page.waitForFunction(()=>TripSync.status.state==='ok');
+    assert.equal(await page.evaluate(()=>TripApp.trip.title),'第二份行程');
+    assert.equal(await page.evaluate(()=>TripApp.expenses.length),0);
+    await page.goto(adminUrl+'?code='+originalCode);await page.waitForFunction(()=>TripSync.status.state==='ok');
+    assert.equal(await page.evaluate(()=>TripApp.trip.days[0].stay.reservationNo),'private-test');
     await page.evaluate(()=>TripSync.disconnect());
     await page.evaluate(()=>TripApp.setTrip({title:'空白測試',days:[]}));
     await page.locator('[data-view="today"]').click();assert.match(await page.locator('#nextStop').innerText(),/先安排/);
     await page.evaluate(t=>TripApp.setTrip(t),initial);
     await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(root,'tests/mobile.png'),fullPage:true});
     await page.setViewportSize({width:1440,height:1000});await page.locator('[data-view="plan"]').click();await page.screenshot({path:path.join(root,'tests/desktop.png'),fullPage:true});
+    await page.route('**/admin/api/trip/**',route=>route.fulfill({status:401,json:{error:'請重新登入'}}));
+    await page.evaluate(async code=>{TripSync.setConfig({code});try{await TripSync.pushTrip(TripApp.trip);}catch(_){}},originalCode);
+    assert.equal(await page.evaluate(()=>TripSync.canEdit()),false);
+    await page.locator('[data-view="more"]').click();
+    assert.equal(await page.locator('#adminLogin').isVisible(),true);
     assert.deepEqual(errors,[]);
     console.log('PASS mobile layout, status persistence, editing, route view, expense totals, delay, desktop, offline reload, weather rain alert, sync publication/privacy/reload, empty trip, read-only');
   } finally{await browser.close();server.close();db.close();}

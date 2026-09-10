@@ -1,11 +1,18 @@
 {
-  "name": "trip-sync",
+  "name": "jolly-field-3c8a",
+  "account_id": "f1c6b170cb799568ddcab825f34bc2a2",
   "main": "src/index.js",
-  "compatibility_date": "2025-01-01",
+  "compatibility_date": "2026-08-31",
+  "preview_urls": false,
+  "observability": { "enabled": true, "logs": { "enabled": true } },
+  "build": { "command": "node build-assets.mjs" },
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": true },
+  "ratelimits": [{ "name": "LOGIN_LIMITER", "namespace_id": "783102", "simple": { "limit": 10, "period": 60 } }],
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "trip-sync"
+      "database_name": "trip-sync",
+      "database_id": "4fa49152-dd4c-440d-99f2-7d59b3a48f1a"
     }
   ],
   "triggers": {

@@ -6,20 +6,21 @@
   const $  = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const shareSource = window.TripSync?.isShared ? `${window.TripSync.base()}:${window.TripSync.config.code}` : null;
-  const OVERRIDE_KEY = shareSource ? `sharedTrip:${shareSource}` : 'tripOverride';
+  const adminSource = () => window.TripSync?.isAdmin && window.TripSync.enabled() && !shareSource ? `${window.TripSync.base()}:${window.TripSync.config.code}` : null;
+  const overrideKey = () => shareSource ? `sharedTrip:${shareSource}` : adminSource() ? `adminTrip:${adminSource()}` : 'tripOverride';
 
   /* ---------------- 狀態 ---------------- */
   const fileTrip = window.TRIP || { title: '尚未設定行程', days: [] };
   let trip = fileTrip, usingOverride = false;
   try {
-    const raw = localStorage.getItem(OVERRIDE_KEY);
+    const raw = localStorage.getItem(overrideKey());
     if (raw) { trip = JSON.parse(raw); usingOverride = true; }
-  } catch (_) { localStorage.removeItem(OVERRIDE_KEY); }
+  } catch (_) { localStorage.removeItem(overrideKey()); }
 
   const CUR  = () => trip.currency     || { code: 'JPY', symbol: '¥',   name: '當地幣' };
   const HOME = () => trip.homeCurrency || { code: 'TWD', symbol: 'NT$', name: '台幣' };
   const DAYS = () => trip.days || [];
-  const KEY  = { exp: () => `expenses:${shareSource || trip.id || 'trip'}`, check: () => `checklist:${shareSource || trip.id || 'trip'}` };
+  const KEY  = { exp: () => `expenses:${shareSource || adminSource() || trip.id || 'trip'}`, check: () => `checklist:${shareSource || adminSource() || trip.id || 'trip'}` };
 
   /* ---------------- 小工具 ---------------- */
   const WEEK = ['日', '一', '二', '三', '四', '五', '六'];
@@ -560,12 +561,12 @@
     setTrip(next, persist = true) {
       if (!window.TripCore.validTrip(next)) throw new Error('行程格式錯誤：days 必須為每日行程陣列');
       trip = next;
-      if (persist) { localStorage.setItem(OVERRIDE_KEY, JSON.stringify(next)); usingOverride = true; }
+      if (persist) { localStorage.setItem(overrideKey(), JSON.stringify(next)); usingOverride = true; }
       renderAll();
       if (persist) pushTrip();
       document.dispatchEvent(new Event('tripchanged'));
     },
-    clearOverride() { localStorage.removeItem(OVERRIDE_KEY); trip = fileTrip; usingOverride = false; renderAll(); },
+    clearOverride() { localStorage.removeItem(overrideKey()); trip = fileTrip; usingOverride = false; renderAll(); },
     renderAll, showView, download, esc, fmtDate, parseDate, iso, addDays, dayCount, driveInfo,
     syncNow, pullExpenses, applyRemoteTrip,
     get expenses() { return expenses; },
@@ -598,7 +599,7 @@
     else if (adopted) syncStatus('error', '這個分享連結沒有帶同步端點，請到「設定」分頁補上。');
   }
 
-  if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) {
+  if (!location.pathname.startsWith('/admin/') && 'serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
 })();

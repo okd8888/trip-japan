@@ -3,6 +3,8 @@
 一個以**純靜態前端**運作的自駕旅遊助手：下一站、每日時間軸、導航、停車、延誤提醒、花費與匯率。
 核心功能不需要後端或建置工具，可直接使用 GitHub Pages。跨裝置分享可選配 Cloudflare Worker + D1。
 
+網頁管理功能採自訂 Token 登入，公開網站維持唯讀。設定、部署與權限驗證請先看 [管理員 Token 指南](docs/ADMIN-TOKEN.md)；舊版編輯金鑰不再授予寫入權限。
+
 新版功能、資料欄位、同步部署與驗證方式請見 [自駕助手使用與驗收](docs/SELF-DRIVE.md)。
 
 ## 檔案結構
@@ -27,7 +29,7 @@ sw.js                 Service Worker：出國沒網路也能開
 
 ## 怎麼改成自己的行程
 
-**方法 A（推薦）：在網頁上改。** 打開網站 → 底部「更多」→「編輯行程／備份」，全部都是表單：
+**方法 A（推薦）：在網頁上改。** 打開網站 → 底部「更多」→「管理者登入」→ 登入後開啟「編輯行程／備份」，全部都是表單：
 
 1. **基本資料** — 目的地下拉選單、出發／回程日期、幣別、行程名稱。只有一顆「**套用設定**」。
    改了目的地時，下拉選單底下會出現一列選擇：**依新目的地重新產生行程**（預設）或**保留現有行程**——
@@ -168,7 +170,7 @@ Source 選 **Deploy from a branch**，Branch 選 **main** / **/ (root)**，按 S
 | 打包清單勾選 | 瀏覽器 localStorage | 以項目文字記錄，清單改順序也不會勾錯 |
 | 編輯中的行程 | 瀏覽器 localStorage | 只有你看得到；按「下載 trip.js」覆蓋檔案後 push 才會公開 |
 | 匯率 | 線上抓取 + localStorage 快取 | 設了同步端點就先問自己的 Worker，再依序試 currency-api 與 open.er-api.com，都失敗才用預設值，也可手動改 |
-| 同步設定 | 瀏覽器 localStorage | 端點、行程碼、編輯金鑰。**不會進 repo**，所以專案本身永遠是乾淨的範本 |
+| 同步設定 | 瀏覽器 localStorage | 端點與行程碼；登入憑證另由 HttpOnly Cookie 保存，不放入 localStorage |
 | 同步的行程與花費 | **你自己的** Cloudflare D1 | 只有開了下面「跨裝置同步」才有；別人 fork 是開他自己的一份 |
 
 > 花費是本機資料，**旅程結束前記得按「匯出 CSV」備份**。
@@ -179,11 +181,9 @@ Source 選 **Deploy from a branch**，Branch 選 **main** / **/ (root)**，按 S
 預設情況下，你的修改只存在自己的瀏覽器，要讓別人看到得下載 `trip.js` 覆蓋檔案再 `git push`。
 如果覺得麻煩，可以花兩分鐘開一個**屬於你自己的**後端，之後行程與花費就會自動同步。
 
-1. 在 Cloudflare 後台建一個 Worker、貼上 `worker/src/index.js`、建一個 D1 並把綁定命名為 `DB`。
-   十分鐘、不用終端機，完整步驟見 [`worker/README.md`](worker/README.md)。
-   （有 Node 的話 `cd worker && npm install && npm run deploy` 更快。）
-2. 拿到網址（`https://trip-sync.你的帳號.workers.dev`）。
-3. 回到網站的「編輯」分頁 → 最下面「跨裝置同步」→ 填端點 → 按「建立同步行程」。
+1. 依 [管理員 Token 指南](docs/ADMIN-TOKEN.md) 設定 `ADMIN_TOKEN` Secret，使用 Wrangler 打包及部署 Worker、D1 與管理介面。
+2. 從網站「更多 → 管理者登入」進入管理介面。
+3. 登入後開啟「更多 → 進階設定」，建立或連結現有行程。
 4. 按「複製分享連結」傳給同行的人，他們打開就是唯讀版本。
 
 **順帶拿到的好處：匯率會變穩。** 同一支 Worker 也提供 `/api/rate`，設好端點後它會被排在
@@ -194,9 +194,9 @@ Source 選 **Deploy from a branch**，Branch 選 **main** / **/ (root)**，按 S
 **這個設計刻意讓專案保持成通用範本：**
 
 - repo 裡永遠只有程式碼、範例 `trip.js` 和通用的 `presets.js`，沒有任何人的旅程資料。
-- 同步端點、行程碼、編輯金鑰都存在瀏覽器 localStorage，不會被 commit 進去。
-- 沒填端點的人，網站行為和純靜態版本一模一樣，`sync.js` 全程不做事。
-- 別人 fork 這個專案，是連到他自己的 Cloudflare 帳號，兩邊資料互不相干。
+- 行程碼存在瀏覽器 localStorage；管理者工作階段在 HttpOnly Cookie 與 D1，不會被 commit 進去。
+- 公開站維持唯讀，輸入正確管理員 Token 後才能寫入。
+- Fork 部署時需修改 Wrangler 的帳號、Worker、D1 與管理者設定，以及前端登入／分享網址。
 
 **絕對不要**把任何 API 金鑰寫進這個 repo——它是公開的。金鑰只該存在你自己 Worker 的環境變數裡。
 

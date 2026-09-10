@@ -1,9 +1,15 @@
 -- 跨裝置同步用的資料表。一個「行程碼」＝一趟旅程＝一本帳本。
--- 這裡只存使用者自己放進來的行程與花費，沒有帳號、沒有 email、沒有密碼。
+-- 行程、花費與管理員登入工作階段；不儲存明文 Token。
+
+CREATE TABLE IF NOT EXISTS admin_sessions (
+  id_hash TEXT PRIMARY KEY,
+  token_hash TEXT NOT NULL,
+  expires_at INTEGER NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS trips (
   code          TEXT PRIMARY KEY,   -- 行程碼，知道就能讀（10 碼亂數）
-  edit_key_hash TEXT NOT NULL,      -- 編輯金鑰的 SHA-256，明文不落地
+  edit_key_hash TEXT NOT NULL,      -- 保留舊資料表相容性；不再作為寫入憑證
   trip          TEXT NOT NULL,      -- 行程 JSON，整包存
   version       INTEGER NOT NULL,   -- 樂觀鎖：每次寫入 +1
   updated_by    TEXT,               -- 顯示名稱，讓同行的人知道是誰改的

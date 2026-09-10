@@ -11,13 +11,48 @@
   const labels = { pending: '○ 尚未前往', current: '● 現在', done: '✓ 已完成', skipped: '↷ 已跳過' };
   for (const [source, target] of [['flightPanel','moreFlights'],['checklistPanel','moreChecklist'],['chartPanel','moreChart']]) $('#'+target).append($('#'+source));
   $('#syncAdvancedFields').append($('#syncBadge').closest('.panel'));
+  if (window.TripSync.isAdmin && !window.TripSync.isShared) {
+    $('#adminStatus').textContent = '管理模式已開啟。管理入口需連線登入；唯讀分享頁可離線查看。';
+    $('#adminLogin').hidden = true;
+    $('#adminLogout').hidden = false;
+    $('#adminLogout').onclick = async () => {
+      try {
+        const response = await fetch('/auth/logout', {method:'POST'});
+        if (!response.ok) throw new Error('登出失敗，請重試');
+        location.replace('/login');
+      } catch (error) { $('#adminStatus').textContent = error.message; }
+    };
+    $('#adminTripsField').hidden = false;
+    $('#syncEndpoint').readOnly = true;
+    $('#syncName').readOnly = true;
+    fetch('/admin/api/trips', {cache:'no-store'}).then(async response => {
+      if (!response.ok) throw new Error('無法讀取行程清單，請重新登入');
+      const {trips} = await response.json();
+      for (const trip of trips) $('#adminTrips').add(new Option(trip.title, trip.code));
+      $('#adminTrips').value = window.TripSync.config.code;
+    }).catch(error => { $('#adminStatus').textContent = error.message; });
+    $('#adminTrips').onchange = () => {
+      const code = $('#adminTrips').value;
+      if (code && confirm('切換行程前請確認修改已同步。繼續？')) location.href = '/admin/?code=' + encodeURIComponent(code);
+    };
+  } else if (window.TripSync.config.code) {
+    $('#adminLogin').href += '?code=' + encodeURIComponent(window.TripSync.config.code);
+  }
   $('#shareCopy').onclick = () => $('#syncShare').click();
   $('#syncPull').onclick = async () => {
     if (!window.TripSync.enabled()) { $('#syncStatus').textContent='同步尚未啟用，請先完成進階設定。'; return; }
     if (!readOnly() && !confirm('取得最新行程會覆蓋本機修改，確定繼續？')) return;
     await T.syncNow();
   };
-  window.TripSync.onStatus(state => { $('#syncStatus').textContent=state.message; render(); });
+  window.TripSync.onStatus(state => {
+    $('#syncStatus').textContent=state.message;
+    if (window.TripSync.isAdmin && readOnly()) {
+      $('#adminLogin').hidden=false;
+      $('#adminLogin').href='/admin/?code='+encodeURIComponent(window.TripSync.config.code);
+      $('#adminStatus').textContent='登入已逾時，請重新登入；本機修改已保留。';
+    }
+    render();
+  });
   let quickKind = 'item';
   $('#quickCancel').onclick = () => $('#quickDialog').close();
   $('#quickForm').onsubmit = event => {

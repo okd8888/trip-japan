@@ -1,11 +1,13 @@
+import { administrator, loginPage, authenticate, logout } from './auth.js';
+
 /* 旅遊行程手冊 — 同步後端（Cloudflare Worker + D1）
  *
  * 這支 Worker 由「每個使用者自己部署到自己的 Cloudflare 帳號」，
  * 前端網站本身仍然是純靜態、不綁任何後端。沒填端點的人完全不受影響。
  *
- * 權限模型（刻意做得很輕，因為這是給同行三五個人用的）：
+ * 權限模型：
  *   行程碼 code       10 碼亂數，知道就能「讀」——分享連結就是靠它
- *   編輯金鑰 editKey  32 碼亂數，有才能「寫」——只存 SHA-256 在資料庫
+ *   /admin/ 輸入管理員 Token 後開放，Worker 逐次驗證登入工作階段。
  *
  * 所以：行程碼等同「知道網址就看得到」。護照號碼、信用卡卡號這類東西
  * 不要放進行程備註，這點前端設定面板也有寫。
@@ -17,6 +19,8 @@ const JSON_HEADERS = { 'content-type': 'application/json;charset=utf-8' };
    所以第一次收到請求時自己把表建起來，一鍵部署才真的是一鍵。
    全部都是 IF NOT EXISTS，重跑無害；每個 isolate 只會做一次。 */
 const SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS admin_sessions (
+     id_hash TEXT PRIMARY KEY, token_hash TEXT NOT NULL, expires_at INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS trips (
      code TEXT PRIMARY KEY, edit_key_hash TEXT NOT NULL, trip TEXT NOT NULL,
      version INTEGER NOT NULL, updated_by TEXT, updated_at INTEGER NOT NULL, created_at INTEGER NOT NULL)`,
@@ -40,11 +44,11 @@ function ensureSchema(env) {
 }
 
 /* 前端可能被託管在 GitHub Pages、Cloudflare Pages 或本機，來源不固定，
-   所以放行任何 origin。安全性靠 editKey，不靠 origin 白名單。 */
+   所以公開讀取放行任何 origin。管理入口另驗證登入及同源寫入。 */
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
-  'access-control-allow-headers': 'content-type,x-edit-key',
+  'access-control-allow-headers': 'content-type',
   'access-control-max-age': '86400'
 };
 
@@ -64,19 +68,6 @@ function randomId(len) {
   return [...bytes].map(b => alphabet[b % alphabet.length]).join('');
 }
 
-async function sha256(text) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-/* 長度相同才逐位元比較，避免用字串 === 洩漏前綴資訊 */
-function timingSafeEqual(a, b) {
-  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
-
 async function readBody(request) {
   const text = await request.text();
   if (text.length > MAX_TRIP_BYTES) throw new Error('資料太大（上限 512KB）');
@@ -87,15 +78,8 @@ async function readBody(request) {
 
 async function loadTrip(env, code) {
   return env.DB.prepare(
-    'SELECT code, edit_key_hash, trip, version, updated_by, updated_at FROM trips WHERE code = ?'
+    'SELECT code, trip, version, updated_by, updated_at FROM trips WHERE code = ?'
   ).bind(code).first();
-}
-
-/* 有 editKey 且對得上才回 true；讀取端點不需要呼叫這個 */
-async function canWrite(request, row) {
-  const key = request.headers.get('x-edit-key') || '';
-  if (!key) return false;
-  return timingSafeEqual(await sha256(key), row.edit_key_hash);
 }
 
 const cleanTrip = trip => JSON.parse(JSON.stringify(trip, (key, value) => ['reservationNo', 'editKey', 'syncKey'].includes(key) ? undefined : value));
@@ -111,21 +95,20 @@ const publicTrip = row => ({
 
 /* ---------------- 行程 ---------------- */
 
-/* POST /api/trip — 開一個新的同步行程，回傳 code + editKey（editKey 只在這時候出現一次） */
+/* POST /admin/api/trip — 管理者建立行程，沿用既有資料表。 */
 async function createTrip(request, env) {
   const body = await readBody(request);
   if (!validTrip(body.trip)) return fail(400, '缺少有效的 trip.days');
 
   const code = randomId(10);
-  const editKey = randomId(32);
   const t = now();
 
   await env.DB.prepare(
     `INSERT INTO trips (code, edit_key_hash, trip, version, updated_by, updated_at, created_at)
      VALUES (?, ?, ?, 1, ?, ?, ?)`
-  ).bind(code, await sha256(editKey), JSON.stringify(cleanTrip(body.trip)), String(body.by || ''), t, t).run();
+  ).bind(code, '', JSON.stringify(cleanTrip(body.trip)), String(body.by || ''), t, t).run();
 
-  return json({ code, editKey, version: 1, updatedAt: t }, 201);
+  return json({ code, version: 1, updatedAt: t }, 201);
 }
 
 /* GET /api/trip/:code — 唯讀，分享連結走這裡 */
@@ -135,11 +118,10 @@ async function getTrip(env, code) {
   return json(publicTrip(row));
 }
 
-/* PUT /api/trip/:code — 需要 editKey。帶 version 做樂觀鎖，撞到回 409 與伺服器現況 */
+/* PUT /admin/api/trip/:code — 路由已驗證管理者。帶 version 做樂觀鎖，撞到回 409。 */
 async function putTrip(request, env, code) {
   const row = await loadTrip(env, code);
   if (!row) return fail(404, '找不到這個行程碼');
-  if (!await canWrite(request, row)) return fail(403, '編輯金鑰不正確，目前是唯讀狀態');
 
   const body = await readBody(request);
   if (!validTrip(body.trip)) return fail(400, '缺少有效的 trip.days');
@@ -182,7 +164,6 @@ async function getExpenses(env, code, since) {
 async function postExpenses(request, env, code) {
   const row = await loadTrip(env, code);
   if (!row) return fail(404, '找不到這個行程碼');
-  if (!await canWrite(request, row)) return fail(403, '編輯金鑰不正確，目前是唯讀狀態');
 
   const body = await readBody(request);
   const list = Array.isArray(body.expenses) ? body.expenses : [];
@@ -308,17 +289,55 @@ async function refreshRates(env) {
 
 export default {
   async fetch(request, env) {
-    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
     if (!env.DB) return fail(500, 'Worker 還沒綁定 D1 資料庫（binding 名稱要叫 DB）');
-
     try { await ensureSchema(env); }
     catch (err) { return fail(500, '資料表建立失敗：' + (err.message || err)); }
-
     const url = new URL(request.url);
+    if (url.pathname === '/login' && request.method === 'GET') return loginPage(env);
+    if (url.pathname === '/auth/login' && request.method === 'POST') return authenticate(request, env);
+    if (url.pathname === '/auth/logout' && request.method === 'POST') return logout(request, env);
+    const adminPath = url.pathname === '/admin' || url.pathname.startsWith('/admin/');
+    const write = !['GET', 'HEAD', 'OPTIONS'].includes(request.method);
+    let identity = null;
+    if (adminPath) {
+      identity = await administrator(request, env);
+      if (!identity) {
+        if (request.method === 'GET' && !url.pathname.startsWith('/admin/api/')) {
+          const code = url.searchParams.get('code');
+          return Response.redirect(url.origin + '/login' + (code ? '?code='+encodeURIComponent(code) : ''),302);
+        }
+        return fail(401, '請輸入管理員 Token 登入');
+      }
+      if (write && request.headers.get('origin') !== url.origin) return fail(403, '管理操作必須從本站送出');
+      if (write && !request.headers.get('content-type')?.startsWith('application/json')) return fail(415, '管理操作必須使用 JSON');
+      if (url.pathname === '/admin') return Response.redirect(url.origin + '/admin/', 302);
+      if (!url.pathname.startsWith('/admin/api/')) {
+        if (!['GET', 'HEAD'].includes(request.method)) return fail(405, '不支援的方法');
+        if (!env.ASSETS) return fail(503, '管理介面尚未部署');
+        const asset = await env.ASSETS.fetch(request);
+        const headers = new Headers(asset.headers);
+        headers.set('cache-control', 'no-store');
+        headers.set('x-content-type-options', 'nosniff');
+        if (asset.headers.get('content-type')?.includes('text/html') && request.method === 'GET') {
+          const script = `<script>window.TripIdentity=${JSON.stringify(identity).replace(/</g, '\\u003c')};</script>`;
+          headers.delete('content-length');
+          headers.delete('etag');
+          return new Response((await asset.text()).replace('<head>', '<head>' + script), {status:asset.status, headers});
+        }
+        return new Response(asset.body, {status:asset.status, headers});
+      }
+    } else if (write) return fail(403, '公開端點僅供讀取，請從管理入口登入');
+    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
+    if (adminPath) url.pathname = url.pathname.slice('/admin'.length);
     const parts = url.pathname.split('/').filter(Boolean);   // ['api','trip','abc']
 
     try {
       if (parts[0] === 'api' && parts[1] === 'health') return json({ ok: true });
+
+      if (adminPath && url.pathname === '/api/trips' && request.method === 'GET') {
+        const {results} = await env.DB.prepare('SELECT code, trip, updated_at FROM trips ORDER BY updated_at DESC').all();
+        return json({trips:results.map(row => ({code:row.code, title:JSON.parse(row.trip).title || row.code}))});
+      }
 
       if (parts[0] === 'api' && parts[1] === 'rate') {
         if (request.method !== 'GET') return fail(405, '不支援的方法');

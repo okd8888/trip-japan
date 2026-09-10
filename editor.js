@@ -510,13 +510,8 @@
       commit(); flash('#savedCheck'); return;
     }
 
-    /* 端點與顯示名稱隨手改就存；行程碼與編輯金鑰要按按鈕才生效，
+    /* 端點與顯示名稱隨手改就存；行程碼要按按鈕才生效，
        否則手滑改一個字就會把花費同步到別本帳。 */
-    if (t.id === 'syncShowKey') {
-      $('#syncKey').type = t.checked ? 'text' : 'password';
-      return;
-    }
-
     if (t.id === 'syncEndpoint' || t.id === 'syncName') {
       if (SY()) { SY().setConfig(t.id === 'syncEndpoint' ? { endpoint: t.value.trim() } : { name: t.value.trim() }); renderSync(); }
       return;
@@ -609,7 +604,6 @@
       case 'syncConnect': syncConnect(); break;
       case 'syncNow':     syncManual();  break;
       case 'syncShare':   syncShare();   break;
-      case 'syncCopyKey': syncCopyKey(); break;
       case 'syncOff':     syncOff();     break;
 
       case 'tripDownload': downloadTripJs(); break;
@@ -668,20 +662,16 @@
     return {
       endpoint: $('#syncEndpoint').value.trim(),
       code: $('#syncCode').value.trim(),
-      editKey: $('#syncKey').value.trim(),
       name: $('#syncName').value.trim()
     };
   }
 
-  /* 這四個欄位刻意做成「非受控」：只在開站與明確動作（建立／連結／中斷）後回填。
-     若每次 renderAll 都重寫，使用者先貼好編輯金鑰、再打顯示名稱時，
-     name 的 change 會觸發重繪，把還沒送出的金鑰清成空字串。 */
+  /* 欄位只在開站與明確動作後回填，避免重繪清除尚未送出的行程碼。 */
   function fillSyncFields() {
     if (!SY() || !$('#syncEndpoint')) return;
     const c = SY().config;
     $('#syncEndpoint').value = c.endpoint || '';
     $('#syncCode').value = c.code || '';
-    $('#syncKey').value = c.editKey || '';
     $('#syncName').value = c.name || '';
   }
 
@@ -711,7 +701,7 @@
     try {
       const out = await SY().createTrip(T.trip);
       fillSyncFields(); renderSync();
-      msg('#syncMsg', `建立完成，行程碼 ${out.code}。編輯金鑰只會出現在這台裝置，請按「複製分享連結」分享唯讀版本。`);
+      msg('#syncMsg', `建立完成，行程碼 ${out.code}。請按「複製分享連結」分享唯讀版本；編輯需要管理者登入。`);
       await T.pullExpenses();
     } catch (err) { msg('#syncMsg', '建立失敗：' + err.message, false); }
   }
@@ -742,20 +732,6 @@
       msg('#syncMsg', '分享連結已複製。對方打開就是唯讀版本，不能改你的行程。');
     } catch (_) {
       msg('#syncMsg', '複製失敗，請手動複製：' + url, false);
-    }
-  }
-
-  /* 金鑰欄位是 password 型別，瀏覽器會擋住從裡面複製，所以另外給一顆按鈕。
-     非 HTTPS 或權限被拒時 clipboard 會失敗，退回用 prompt 讓使用者手動選取。 */
-  async function syncCopyKey() {
-    const key = SY().config.editKey;
-    if (!key) return msg('#syncMsg', '目前沒有編輯金鑰（唯讀狀態）。', false);
-    try {
-      await navigator.clipboard.writeText(key);
-      msg('#syncMsg', '編輯金鑰已複製。這把金鑰只存在這台裝置，請另外備份一份。');
-    } catch (_) {
-      window.prompt('複製這串編輯金鑰並另外備份：', key);
-      msg('#syncMsg', '自動複製失敗，已改用彈出視窗顯示。');
     }
   }
 
